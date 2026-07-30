@@ -575,9 +575,9 @@ The report is a single self-contained HTML file and includes:
 
 ### Unit tests
 
-Unit tests run in the Poetry development environment. The container image ships
-only the runtime dependencies — `pytest` and the `tests/` tree are deliberately
-not included — so unit tests cannot be run inside the image.
+Unit tests can be run either in the Poetry development environment or inside the
+container image, which ships `pytest`. The `tests/` tree itself is not copied
+into the image — bind-mount a checkout instead, as shown below.
 
 ```bash
 # Set up the development environment once (see Development install)
@@ -585,6 +585,33 @@ poetry install --with dev
 
 # Run the unit tests
 poetry run pytest tests/unit/ -q
+```
+
+Inside the Singularity image — useful on HPC where the Poetry environment is not
+available. Singularity bind-mounts the current working directory by default, so
+running from the repository root is enough:
+
+```bash
+cd /path/to/qm-lux          # repo root
+singularity exec /path/to/qm-lux.sif python -m pytest tests/unit/ -q
+```
+
+This exercises the copy of `qm_lux` installed *in the image*, not the checkout —
+which is usually what you want when validating an image. To test local source
+changes without rebuilding, put your checkout ahead of the installed copy:
+
+```bash
+singularity exec --env PYTHONPATH=/src --bind "$PWD/src:/src" \
+    /path/to/qm-lux.sif python -m pytest tests/unit/ -q
+```
+
+Inside Docker the working directory is not mounted automatically, so both the
+tests and (optionally) the source must be passed explicitly:
+
+```bash
+cd /path/to/qm-lux          # repo root
+docker run --rm -v "$PWD/tests:/app/tests" -w /app \
+    ghcr.io/bedapub/qm-lux:1.0.0 python -m pytest tests/unit/ -q
 ```
 
 All 294 tests must pass on a clean checkout.
