@@ -1,0 +1,84 @@
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Phototoxicity Results HTML</title>
+        <!-- DataTables CSS -->
+        <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/jquery.dataTables.min.css">
+        <!-- jQuery and DataTables JS -->
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+        <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+        <style>
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }}
+            th, td {{
+                text-align: center;
+                padding: 8px;
+                border: 1px solid black;
+            }}
+            th {{
+                background-color: #f2f2f2;
+            }}
+            img {{
+                height: auto;
+            }}
+            .gradient {{
+                display: inline-block;
+                padding: 6px 10px; /* Increased padding to make the area around the text larger */
+                border-radius: 6px;
+                color: white;
+                font-weight: bold;
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>Phototoxicity Results</h1>
+        <table id="resultsTable" class="display">
+            <thead>
+                <tr>
+                    <th>SRN</th>
+                    <th>SMILES_CLEAN</th>
+                    <th>Structure</th>
+                    <th>UV-Vis Spectra</th>
+                    <th>Prediction</th>
+                    <th>Probability</th>
+                    <th>Descriptors</th>
+                    <th>ML Method</th>
+                </tr>
+            </thead>
+            <tbody>
+    
+            <tr>
+                <td style="color:green;">CPD-001_0</td>
+                <td style="color:green;">C</td>
+                <td style="color:green;">0</td>
+                <td><span class="gradient" style="background-color:rgba(0, 128, 0, 0.95);">0.95</span></td>
+                <td style="color:green;">fp_Morganclean__descriptors_SMILES_CLEAN__100-1000</td>
+                <td style="color:green;">RF</td>
+            </tr>
+        
+            <tr>
+                <td style="color:green;">CPD-002_0</td>
+                <td style="color:green;">CC</td>
+                <td style="color:green;">0</td>
+                <td><span class="gradient" style="background-color:rgba(0, 128, 0, 0.94);">0.94</span></td>
+                <td style="color:green;">fp_Morganclean__descriptors_SMILES_CLEAN__100-1000</td>
+                <td style="color:green;">RF</td>
+            </tr>
+        
+            </tbody>
+        </table>
+        <!-- Initialize DataTables -->
+        <script>
+            $(document).ready(function() {{
+                $('#resultsTable').DataTable();
+            }});
+        </script>
+    </body>
+    </html>
+    

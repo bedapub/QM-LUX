@@ -1,0 +1,12 @@
+.gitignore
+.dockerignore
+.github/
+.ipynb_checkpoints
+.pytest_cache/
+Dockerfile*
+LICENSE
+poetry.lock
+tests/
+# NOTE: pyproject.toml and README.md are deliberately NOT ignored — `pip install`
+# in the Dockerfile needs both (pyproject declares the build, and it references
+# README.md via `readme = "README.md"`).

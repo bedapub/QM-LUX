@@ -1,0 +1,20 @@
+default-resources:
+  qos: '15d'
+  mem_mb: 10000
+
+set-resources:
+  model:
+    qos: '3h'
+    mem_mb: 10000
+  xtb_conf:
+    qos: '1d'
+    mem_mb: 10000
+  xtb:
+    qos: '1d'
+    mem_mb: 20000
+  crest:
+    qos: '15d'
+    mem_mb: 20000   
+  gaussian_runner:
+    qos: '15d'
+    mem_mb: 100000

@@ -1,0 +1,61 @@
+[tool.poetry]
+name = "qm-lux"
+version = "1.0.0"
+description = "Phototoxicity prediction workflow combining QM UV-Vis descriptors with machine learning"
+authors = [
+    "Nicolo Milani <nicolo.milani@roche.com>",
+    "Roland Schmucki <roland.schmucki@roche.com>",
+]
+license = "Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/bedapub/QM-LUX"
+repository = "https://github.com/bedapub/QM-LUX"
+keywords = ["phototoxicity", "cheminformatics", "machine-learning", "quantum-chemistry", "uv-vis"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Intended Audience :: Science/Research",
+]
+packages = [{include = "qm_lux", from = "src"}]
+include = ["src/qm_lux/py.typed"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+scikit-learn = "^1.5.0"
+pandas = "^2.2.2"
+numpy = "^1.26.4"
+scipy = "^1.13.1"
+matplotlib = "^3.9.0"
+rdkit = "^2023.9.6"
+seaborn = "^0.13.2"
+ipykernel = "^6.29.4"
+imblearn = "^0.0"
+openpyxl = "^3.1.5"
+ase = "^3.23.0"
+
+[tool.poetry.scripts]
+qm-lux = "qm_lux.cli:main"
+
+[tool.poetry.group.dev.dependencies]
+pytest     = "^8.0"
+pytest-cov = "^5.0"
+ruff       = "^0.5"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "--tb=short -q"
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

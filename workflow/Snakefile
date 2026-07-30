@@ -1,0 +1,489 @@
+import os
+
+# Configuration
+configfile: "config/config.yaml"
+
+# Shell settings
+shell.executable("/bin/bash")
+# Set PYTHONPATH so the bind-mounted src/ tree takes precedence over the
+# version installed in the image. This ensures code changes in the repo are
+# picked up without rebuilding the image.
+_repo_src = os.path.abspath(os.path.join(workflow.basedir, "..", "src"))
+shell.prefix(f"set -euo pipefail; export PYTHONPATH={_repo_src}; ")
+
+# Validate configuration
+required_config = ["input_file", "results_directory", "qmlux_image",
+                   "model_method", "model_descriptor"]
+for param in required_config:
+    if param not in config:
+        raise ValueError(f"Missing required config parameter: {param}")
+
+# Determine model sourcing mode (checked in priority order):
+#   1. model_local_folder  — copy from a local directory (user-provided files)
+#   2. model_github_url    — download from a GitHub release (public test files)
+#   3. model_arv_uuid      — download from an Arvados Keep-web service
+_model_local       = config.get("model_local_folder", "").strip()
+_model_github      = config.get("model_github_url", "").strip()
+_model_arv         = config.get("model_arv_uuid", "").strip()
+_model_arv_keepweb = config.get("model_arv_keepweb_url", "").strip()
+
+if not (_model_local or _model_github or _model_arv):
+    raise ValueError(
+        "No model source configured. Set one of: "
+        "model_local_folder, model_github_url, or model_arv_uuid in config."
+    )
+
+# Constants
+outdir = config["results_directory"]
+
+
+# Define helper functions
+def list_directories(path):
+    """List directory names directly under ``path``.
+
+    Parameters
+    ----------
+    path : str
+        Parent directory to inspect.
+
+    Returns
+    -------
+    list of str
+        Names of immediate subdirectories; empty list if the path cannot be
+        accessed or contains no subdirectories.
+    """
+    try:
+        entries = os.listdir(path)
+        return [e for e in entries if os.path.isdir(os.path.join(path, e))]
+    except OSError:
+        return []
+
+
+# Define Snakemake rules:
+rule all:
+    input:
+        summary=os.path.join(outdir, "summary.csv"),
+        summary_html=os.path.join(outdir, "summary.html"),
+        failed_html=os.path.join(outdir, "failed_molecules.html"),
+        uvvis_html=os.path.join(outdir, "UVvis.html"),
+
+
+rule model:
+    """
+    Obtain the pre-trained ML model (model.sav) and feature scaler (scaler.pkl).
+
+    Three sourcing modes are supported (checked in priority order):
+
+    1. model_local_folder (highest priority)
+       Copy files from a local directory — use this for user-provided models or
+       files already present on the filesystem.
+       Example config:
+           model_local_folder: /path/to/my/model_dir
+
+    2. model_github_url
+       Download model.sav and scaler.pkl from a GitHub release asset base URL.
+       Use this to fetch the public model bundled with the repository.
+       Example config:
+           model_github_url: https://github.com/bedapub/QM-LUX/releases/download/v1.0.0
+
+    3. model_arv_uuid + model_arv_keepweb_url
+       Download from an Arvados Keep-web service using curl. Requires
+       ARVADOS_API_TOKEN to be set in the calling shell.
+       model_arv_keepweb_url is the base URL of the Keep-web service for
+       your Arvados instance.
+       Example config:
+           model_arv_uuid: <collection-uuid>
+           model_arv_keepweb_url: https://collections.example.com
+           model_arv_folder_name: subfolder   # omit or leave empty if files are at root
+    """
+    output:
+        model_file=os.path.join(outdir, "model/model.sav"),
+        scaler_file=os.path.join(outdir, "model/scaler.pkl"),
+        model_folder=directory(os.path.join(outdir, "model")),
+    localrule: False
+    log:
+        "logs/model.log",
+    params:
+        local_folder=_model_local,
+        github_url=_model_github,
+        arv_uuid=_model_arv,
+        arv_keepweb_url=_model_arv_keepweb,
+        arv_folder=config.get("model_arv_folder_name", ""),
+    message:
+        "Obtaining ML model files (local={params.local_folder} github={params.github_url} arv={params.arv_uuid})"
+    container:
+        config["qmlux_image"]
+    shell:
+        """
+        mkdir -p {output.model_folder}
+
+        if [ -n "{params.local_folder}" ]; then
+            # Mode 1: copy from local directory
+            echo "Model source: local folder {params.local_folder}"
+            cp {params.local_folder}/model.sav  {output.model_folder}/model.sav
+            cp {params.local_folder}/scaler.pkl {output.model_folder}/scaler.pkl
+
+        elif [ -n "{params.github_url}" ]; then
+            # Mode 2: download from GitHub release
+            echo "Model source: GitHub {params.github_url}"
+            curl -fsSL --retry 3 -o {output.model_folder}/model.sav  "{params.github_url}/model.sav"
+            curl -fsSL --retry 3 -o {output.model_folder}/scaler.pkl "{params.github_url}/scaler.pkl"
+
+        else
+            # Mode 3: Arvados Keep-web
+            echo "Model source: Arvados Keep-web {params.arv_keepweb_url} collection {params.arv_uuid}"
+            curl -fsSL --retry 3 \
+                -H "Authorization: Bearer $ARVADOS_API_TOKEN" \
+                "{params.arv_keepweb_url}/c={params.arv_uuid}/{params.arv_folder}/model.sav" \
+                -o {output.model_folder}/model.sav
+            curl -fsSL --retry 3 \
+                -H "Authorization: Bearer $ARVADOS_API_TOKEN" \
+                "{params.arv_keepweb_url}/c={params.arv_uuid}/{params.arv_folder}/scaler.pkl" \
+                -o {output.model_folder}/scaler.pkl
+        fi
+        """
+
+
+rule preparation:
+    input:
+        file=os.path.abspath(config["input_file"]),
+    output:
+        out=os.path.join(outdir, "preparation.out"),
+        pkl=os.path.join(outdir, "data_ml/xtb_input.pkl"),
+        srn=os.path.join(outdir, "data_ml/input.csv"),
+        dir=directory(os.path.join(outdir, "data_ml")),
+    localrule: True
+    log:
+        "logs/preparation.log",
+    container:
+        config["qmlux_image"]
+    shell:
+        """
+        python -m qm_lux.cli data_preparation -c NO -i {input.file} -o {output.dir} > {output.out}
+        """
+
+
+rule xtb_conf:
+    input:
+        dir=rules.preparation.output.dir,
+        pkl=rules.preparation.output.pkl,
+    output:
+        out=os.path.join(outdir, "xtb_conf.out"),
+    localrule: False
+    log:
+        "logs/xtb_conf.log",
+    container:
+        config["qmlux_image"]
+    shell:
+        """
+         python -m qm_lux.cli xtb_conf -i {input.dir} > {output.out} || touch {output.out}
+         """
+         
+
+# crest can fail; crest.err is non-empty on error.  Retried up to 2 times.
+rule crest:
+    input:
+        sdf=os.path.join(outdir, "data_ml", "{ind1}", "{ind2}", "{ind2}.sdf"),
+    output:
+        xyz=os.path.join(
+            outdir, "data_ml", "{ind1}", "{ind2}", "crest_best.xyz"
+        ),
+        out=os.path.join(
+            outdir, "data_ml", "{ind1}", "{ind2}", "crest.out"
+        ),
+        err=os.path.join(
+            outdir, "data_ml", "{ind1}", "{ind2}", "crest.err"
+        ),
+        dir=temp(
+            directory(
+                os.path.join(
+                    outdir, "data_ml", "{ind1}", "{ind2}", "crest"
+                )
+            )
+        ),
+    log:
+        "logs/crest_{ind1}_{ind2}.log",
+    retries: 2
+    threads: config["crest_threads"]
+    resources:
+        mem_mb=20000,
+    params:
+        mem_gb=lambda wildcards, resources: resources.mem_mb // 1000,        
+    container:
+        config["qmlux_image"]
+    shell:
+        """
+        export OMP_STACKSIZE={params.mem_gb}G
+        
+        mkdir -p {output.dir}
+        cp {input.sdf} {output.dir}/input.sdf
+        cd {output.dir}
+
+        ((crest input.sdf --alpb water -T {threads} > crest.out) 2> crest.err) || (touch crest_best.xyz crest.err)
+
+        cd -
+        mv -f {output.dir}/crest.out {output.out}
+        mv -f {output.dir}/crest.err {output.err}
+        mv -f {output.dir}/crest_best.xyz {output.xyz}
+        """
+
+rule xtb:
+    input:
+        xyz=rules.crest.output.xyz,
+        out=rules.crest.output.out,
+        dir=rules.crest.output.dir,
+    output:
+        out=os.path.join(outdir, "data_ml", "{ind1}", "{ind2}", "{ind2}.out"),
+        err=os.path.join(outdir, "data_ml", "{ind1}", "{ind2}", "xtb.err"),
+    log:
+        "logs/xtb_{ind1}_{ind2}.log",
+    retries: 2
+    threads: 1
+    resources:
+        mem_mb=20000,
+    container:
+        config["qmlux_image"]
+    shell:
+        """
+        out_result="$(python -m qm_lux.cli validate crest.out {input.out})"
+        xyz_result="$(python -m qm_lux.cli validate crest_best.xyz {input.xyz})"
+
+        if [ "$out_result" == "The file structure and format are correct." ] && [ "$xyz_result" == "The file structure and format are correct." ]; then
+            cp {input.xyz} {input.dir}/crest_best.xyz
+            cd {input.dir}
+
+            (xtb crest_best.xyz --alpb water --parallel {threads} > xtb.out) 2> xtb.err
+
+            cd -
+            mv -f {input.dir}/xtb.out {output.out}
+            mv -f {input.dir}/xtb.err {output.err}
+        else
+            touch {output.out}
+            touch {output.err}
+        fi
+        """
+
+rule gaussian_preparation:
+    input:
+        xyz=rules.crest.output.xyz,
+    output:
+        gjf=os.path.join(outdir, "data_ml", "{ind1}", "{ind2}", "input.gjf"),
+    localrule: True
+    log:
+        "logs/gaussian_prepartion_{ind1}_{ind2}.log",
+    params:
+        dir=os.path.join(outdir, "data_ml", "{ind1}", "{ind2}"),
+    threads: 1
+    resources:
+        mem_mb=1000,
+    container:
+        config["qmlux_image"]
+    shell:
+        """
+        xyz_result="$(python -m qm_lux.cli validate crest_best.xyz {input.xyz})"
+
+        if [ "$xyz_result" == "The file structure and format are correct." ]; then
+            result="$(python -m qm_lux.cli gaussian_preparation \
+                -i {input.xyz} -c {wildcards.ind1} \
+                -n {wildcards.ind2} -d {params.dir})"
+            mv -f {params.dir}/{wildcards.ind2}_input.gjf {output.gjf}
+        else
+            touch {output.gjf}
+        fi
+        """
+
+# https://gaussian.com/options/
+rule gaussian_runner:
+    input:
+        gjf=rules.gaussian_preparation.output.gjf,
+    output:
+        out=os.path.join(outdir, "data_ml", "{ind1}", "{ind2}", "log.out"),
+    localrule: False
+    log:
+        "logs/gaussian_runner_{ind1}_{ind2}.log",
+    params:
+        mem = "50GB",
+    retries: 3
+    threads: config["gaussian_threads"]
+    resources:
+        mem_mb=50000,
+    shell:
+        """
+        bash scripts/calculate_uvvis.sh {input.gjf} {output.out}
+        """
+
+rule uvvis:
+    input:
+        gaussian=expand(
+            os.path.join(outdir, "data_ml", "{ind1}", "{subdir}", "log.out"), 
+            ind1=0,
+            subdir=list_directories(os.path.join(outdir, "data_ml", "0")),
+        ),
+        xtb=expand(
+            os.path.join(outdir, "data_ml", "{ind1}", "{subdir}", "{subdir}.out"), 
+            ind1=0,
+            subdir=list_directories(os.path.join(outdir, "data_ml", "0")),
+        ),
+    output:
+        pkl=os.path.join(outdir, "data_ml", "test_set_with_fP_rdkit_prop_UVvis.pkl"),
+        dir=directory(os.path.join(outdir, "data_ml", "UV_plots")),
+        csv=os.path.join(outdir, "data_ml", "UVvis.csv"),
+    log:
+        "logs/uvvis.log",
+    params:
+        data_ml_dir=os.path.join(outdir, "data_ml"),
+    localrule: True
+    container:
+        config["qmlux_image"]
+    shell:
+        """
+        python -m qm_lux.cli get_pred_UVvis --input {params.data_ml_dir}
+        """
+
+rule prediction:
+    input:
+        pkl=rules.uvvis.output.pkl,
+        file=os.path.abspath(config["input_file"]),
+        model_file=rules.model.output.model_file,
+        scaler_file=rules.model.output.scaler_file,
+        model_folder=directory(rules.model.output.model_folder),
+    output:
+        csv=os.path.join(outdir, "{descriptor}.{method}", "results_ML.csv"),
+    log:
+        "logs/prediction_{descriptor}.{method}.log",
+    localrule: True
+    container:
+        config["qmlux_image"]
+    shell:
+        """
+        python -m qm_lux.cli prediction --attribute SRN \
+            --method {wildcards.method} --descriptor {wildcards.descriptor} \
+            --input {input.model_folder} --pkl {input.pkl} --csv {output.csv} \
+            --srn {input.file}
+       """
+
+rule get_results:
+    input:
+        pkl=rules.uvvis.output.pkl,
+        csv=rules.prediction.output.csv,
+        uv=rules.uvvis.output.dir,
+    output:
+        os.path.join(outdir, "{descriptor}.{method}", "failed_molecules.txt"),
+        report(os.path.join(outdir, "{descriptor}.{method}", "results_ML_with_mol_UV.html"), caption="report/results_ml_html.rst", category="Results"),
+    log:
+        "logs/get_results_{descriptor}.{method}.log",
+    params:
+        indir=os.path.join(outdir),
+        mldir=os.path.join(outdir, "data_ml"),
+        outdir=os.path.join(outdir, "{descriptor}.{method}"),
+    localrule: True
+    container:
+        config["qmlux_image"]
+    shell:
+        """
+        # Symlink so get_results can locate the output directory by a fixed name.
+        # This breaks if multiple descriptor/method combinations are run simultaneously.
+        cd {params.mldir}
+        ln -s -f ../{wildcards.descriptor}.{wildcards.method} ML_results
+        cd -           
+ 
+        python -m qm_lux.cli get_results --input {params.indir} --output {params.outdir}
+
+        mv {params.mldir}/Failed_molecules.txt {params.outdir}/failed_molecules.txt
+        mv {params.mldir}/results_ML_with_mol_UV.html {params.outdir}/results_ML_with_mol_UV.html
+        """
+
+rule summarize_results:
+    input:
+        html=expand(os.path.join(outdir, "{descriptor}.{method}", "results_ML_with_mol_UV.html"),
+                   descriptor=config["model_descriptor"], method=config["model_method"]),
+        txt=expand(os.path.join(outdir, "{descriptor}.{method}", "failed_molecules.txt"),
+                   descriptor=config["model_descriptor"], method=config["model_method"]),
+    output:
+        summary=os.path.join(outdir, "summary.csv"),
+    params:
+        indir=os.path.join(outdir),
+    localrule: True
+    shell:
+        """
+        ./scripts/results.sh {params.indir} > {output.summary}
+        """
+
+rule report_tables:
+    """Convert CSV/TXT workflow outputs to HTML for inline display in the Snakemake report."""
+    input:
+        summary=os.path.join(outdir, "summary.csv"),
+        failed=expand(
+            os.path.join(outdir, "{descriptor}.{method}", "failed_molecules.txt"),
+            descriptor=config["model_descriptor"],
+            method=config["model_method"],
+        ),
+        uvvis=os.path.join(outdir, "data_ml", "UVvis.csv"),
+    output:
+        summary_html=report(
+            os.path.join(outdir, "summary.html"),
+            caption="report/summary_csv.rst",
+            category="Results",
+        ),
+        failed_html=report(
+            os.path.join(outdir, "failed_molecules.html"),
+            caption="report/failed_molecules.rst",
+            category="Results",
+        ),
+        uvvis_html=report(
+            os.path.join(outdir, "UVvis.html"),
+            caption="report/methods.rst",
+            category="Results",
+        ),
+    localrule: True
+    run:
+        import csv
+        import pathlib
+
+        def csv_to_html(path, max_rows=500):
+            with open(path, newline="") as f:
+                rows = list(csv.reader(f))
+            if not rows:
+                return "<p><em>Empty table.</em></p>"
+            headers, data = rows[0], rows[1:]
+            total = len(data)
+            data = data[:max_rows]
+            note = (
+                f"<p><em>Showing first {max_rows} of {total} rows. "
+                f"Download the CSV for the full dataset.</em></p>"
+                if total > max_rows
+                else ""
+            )
+            th = "".join(f"<th style='padding:4px 8px;border:1px solid #ccc'>{h}</th>" for h in headers)
+            trs = "".join(
+                "<tr>"
+                + "".join(f"<td style='padding:4px 8px;border:1px solid #ccc'>{c}</td>" for c in row)
+                + "</tr>"
+                for row in data
+            )
+            table = (
+                "<table style='border-collapse:collapse;font-size:13px'>"
+                f"<thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table>"
+            )
+            return note + table
+
+        # summary.csv → HTML table
+        pathlib.Path(output.summary_html).write_text(
+            "<html><body>" + csv_to_html(input.summary) + "</body></html>"
+        )
+
+        # failed_molecules.txt → preformatted HTML
+        txt = pathlib.Path(input.failed[0]).read_text().strip()
+        msg = txt if txt else "No failed molecules."
+        pathlib.Path(output.failed_html).write_text(
+            "<html><body><pre style='font-family:monospace'>" + msg + "</pre></body></html>"
+        )
+
+        # UVvis.csv → HTML table (capped at 500 rows)
+        pathlib.Path(output.uvvis_html).write_text(
+            "<html><body>" + csv_to_html(input.uvvis) + "</body></html>"
+        )
+
+
+# Generate with: snakemake --report
+report: 'report/description.rst'
