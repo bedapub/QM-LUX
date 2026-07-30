@@ -1,0 +1,25 @@
+.cache/
+data_*
+.ipynb_checkpoints
+logs/
+*.sif
+__pycache__
+results*
+!tests/integration/reference/results_ML_simple.csv
+!workflow/report/results_*.rst
+RO*
+.snakemake/
+real_input.txt
+models/
+snakemake_workflow/
+.pytest_cache/
+.claude/
+# Cluster-specific SLURM wrapper — carries internal account/paths/module tree.
+# Kept locally only; must NOT be tracked or published.
+submit_integration_test.sh
+# Build artifacts
+dist/
+build/
+*.egg-info/
+# Job/run logs — contain cluster hostnames, internal absolute paths, SLURM accounts
+*.log

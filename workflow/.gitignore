@@ -1,0 +1,27 @@
+*.err
+*.out
+*.pdf
+*.csv
+*.txt
+*.yaml
+*.html
+*test*
+RO*
+data_*
+results*
+!report/results_*.rst
+logs
+benchmarks
+.cache
+.snakemake
+.ipynb_checkpoints
+__pycache__
+!scripts/results.sh
+!scripts/run_tests.sh
+!config/
+!profiles/
+!profiles/slurm/config.yaml
+# Roche-local files — contain site-specific paths; not for public repo
+env_roche_local.sh
+config/config_roche_local.yaml
+README_local.md

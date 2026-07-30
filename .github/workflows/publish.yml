@@ -1,0 +1,32 @@
+name: Publish Python package
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # needed to create/update the GitHub Release and upload assets
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install poetry==1.8.*
+
+      - name: Build wheel and source distribution
+        run: poetry build
+
+      - name: Upload wheel and sdist to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          # Creates the release if it doesn't exist yet; otherwise appends assets.
+          fail_on_unmatched_files: true

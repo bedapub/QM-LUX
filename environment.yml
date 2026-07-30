@@ -1,0 +1,42 @@
+name: qmlux
+channels:
+  - conda-forge
+dependencies:
+  # Core Python - pinned to 3.11.11 (crest fails with 3.11.15+)
+  - python=3.11.11
+  
+  # ML/Data Science
+  - scikit-learn=1.5.0
+  - pandas=2.1.4          # Original it was pandas=2.2.2, but this has a conflict with rdkit (PandasTools)
+  - numpy=1.26.4
+  - scipy=1.13.1
+  - matplotlib=3.10.0     # =3.9.0 as package version is not available for given channel
+  - seaborn=0.13.2
+  - imbalanced-learn=0.13.0  #=0.11.0  # imblearn is actually imbalanced-learn
+  
+  # Chemistry
+  - rdkit=2023.9.6
+  - xtb=6.4.1
+  - crest=2.11.2
+  - ase=3.23.0
+  
+  # Pin GCC/Fortran libraries to working versions
+  - libgcc-ng=14.2.0
+  - libgfortran-ng=14.2.0
+  - libgfortran5=14.2.0
+  - libgomp=14.2.0
+  - libblas=3.9.0=*openblas*
+  - libcblas=3.9.0=*openblas*
+  - liblapack=3.9.0=*openblas*
+  - libopenblas=0.3.28
+  
+  # Utilities
+  - curl
+  - ipykernel=6.29.4
+  - xlsxwriter=3.2.0
+  - openpyxl=3.1.5
+  
+  # Pip packages
+  - pip
+  - pip:
+    - arvados-python-client==3.2.1

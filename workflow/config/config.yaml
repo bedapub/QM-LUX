@@ -1,0 +1,43 @@
+input_file: resources/input.csv
+
+results_directory: results_example
+
+crest_threads: 8
+
+# Number of CPU cores per Gaussian job.
+# Set this to the number of cores your Gaussian license permits.
+gaussian_threads: 24
+
+# Singularity image (absolute path to the local .sif file)
+qmlux_image: /path/to/qm-lux.sif   # pulled from ghcr.io/bedapub/qm-lux:latest
+
+# ML model parameters
+model_method: RF
+model_descriptor: fp_Morganclean__descriptors_SMILES_CLEAN__100-1000
+
+# ── Model sourcing (choose ONE of the three options below) ──────────────────
+#
+# Option 1 — Local directory (user-provided files or pre-downloaded model).
+#   Set to the folder that contains model.sav and scaler.pkl.
+#   Use this if you have the files on disk already.
+#
+#model_local_folder: /path/to/my/model_dir
+#
+# Option 2 — GitHub release download (default; requires a public network connection).
+#   The workflow downloads model.sav and scaler.pkl from the GitHub release.
+#   This is the recommended option for most users.
+#
+model_github_url: https://github.com/bedapub/QM-LUX/releases/download/v1.0.0
+#
+# Option 3 — Arvados Keep-web.
+#   Requires ARVADOS_API_TOKEN to be set in the calling shell.
+#   Set model_arv_keepweb_url to the base URL of your Arvados Keep-web service.
+#
+#model_arv_uuid: <collection-uuid>
+#model_arv_keepweb_url: https://collections.example.com
+#model_arv_folder_name:    # leave empty if model files are at collection root
+
+# ── Singularity bind mounts ─────────────────────────────────────────────────
+# Singularity does not auto-mount filesystems outside $HOME.
+# List every top-level path the workflow reads from or writes to.
+singularity_args_param: "--cleanenv --bind /tmp --bind /path/to/workdir"

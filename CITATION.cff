@@ -1,0 +1,35 @@
+cff-version: 1.2.0
+message: "If you use QM-LUX in your research, please cite it as below."
+title: "QM-LUX: Quantum Molecular Learning with predicted UV-Vis for Xenotoxicity"
+abstract: >-
+  QM-LUX predicts the phototoxicity of small molecules using UV-Vis spectra
+  computed with quantum mechanics. The workflow combines 3D conformer generation
+  (RDKit MMFF94s), conformational sampling with CREST/XTB, excited-state TD-DFT
+  calculations with Gaussian, and an ML classifier trained on UV-Vis AUC
+  descriptors, Morgan fingerprints, and RDKit physicochemical properties.
+type: software
+version: 1.0.0
+license: Apache-2.0
+repository-code: "https://github.com/bedapub/QM-LUX"
+url: "https://github.com/bedapub/QM-LUX"
+keywords:
+  - phototoxicity
+  - cheminformatics
+  - machine-learning
+  - quantum-chemistry
+  - uv-vis
+authors:
+  - family-names: Milani
+    given-names: "Nicolò"
+    email: nicolo.milani@roche.com
+    affiliation: "F. Hoffmann-La Roche AG"
+  - family-names: Anelli
+    given-names: Andrea
+    affiliation: "F. Hoffmann-La Roche AG"
+  - family-names: Reutlinger
+    given-names: Michael
+    affiliation: "F. Hoffmann-La Roche AG"
+  - family-names: Schmucki
+    given-names: Roland
+    email: roland.schmucki@roche.com
+    affiliation: "F. Hoffmann-La Roche AG"
