@@ -19,6 +19,17 @@ RUN mamba env create -f environment.yml && \
 RUN mamba create -n snakemake -c conda-forge -c bioconda "snakemake>=8,<10" -y && \
     mamba clean --all --yes
 
+# --- Layer 3: test runner ---
+# pytest is test-only tooling, added to the runtime env on purpose so the unit
+# suite can be run inside the image on hosts where the Poetry dev environment is
+# unavailable (HPC). The tests/ tree itself is NOT copied in -- it is bind-mounted
+# from a checkout at run time, so .dockerignore stays a strict allow-list.
+# Licensing: pytest, pluggy and iniconfig are all MIT; packaging (Apache-2.0/BSD)
+# is already present. No copyleft is introduced. pytest-cov is deliberately
+# omitted -- nothing in this repo uses --cov, and it would pull in coverage.
+RUN mamba install -n qmlux -c conda-forge "pytest=8.*" -y && \
+    mamba clean --all --yes
+
 # Both envs on PATH: qmlux supplies python/rdkit/xtb/crest; snakemake env supplies snakemake
 ENV PATH=/opt/conda/envs/qmlux/bin:/opt/conda/envs/snakemake/bin:/opt/conda/bin:/app:$PATH
 ENV CONDA_DEFAULT_ENV=qmlux
