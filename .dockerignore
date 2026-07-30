@@ -1,12 +1,49 @@
-.gitignore
-.dockerignore
+# Allow-list: exclude EVERYTHING, then re-include only what the image needs.
+#
+# This deliberately fails CLOSED. The previous deny-list version failed open --
+# `.claude/` was never listed, so agent notes containing internal hostnames and
+# paths were copied into published images by `COPY . .`. Anything not explicitly
+# re-included below cannot reach the build context, so a new file added to the
+# repo can never leak into an image by default.
+#
+# The Dockerfile also copies only specific paths, so a leak needs two mistakes.
+*
+
+# --- required to build and install the package ---
+!pyproject.toml
+!README.md
+!src/
+!environment.yml
+# Apache-2.0 §4(a): recipients of the image must get a copy of the License.
+# The image also redistributes LGPL-3.0 binaries (XTB, CREST), so shipping the
+# license text matters for the OSSAN/attribution work too.
+!LICENSE
+
+# Re-exclude junk that could otherwise ride along inside an allowed directory.
+**/__pycache__/
+**/*.py[cod]
+**/.ipynb_checkpoints/
+**/.pytest_cache/
+**/*.egg-info/
+
+# Belt-and-braces: named explicitly so the intent survives future edits to the
+# allow-list above. Later rules win in .dockerignore, so these always apply even
+# if someone adds a broad `!` re-include. Every one of these has either leaked
+# into a published artefact before, or contains internal paths/credentials.
+.git/
 .github/
-.ipynb_checkpoints
-.pytest_cache/
-Dockerfile*
-LICENSE
-poetry.lock
+.claude/
+.venv/
+venv/
+dist/
+build/
 tests/
-# NOTE: pyproject.toml and README.md are deliberately NOT ignored — `pip install`
-# in the Dockerfile needs both (pyproject declares the build, and it references
-# README.md via `readme = "README.md"`).
+workflow/
+models/
+*.sif
+*.log
+snakemake_report*.html
+submit_integration_test.sh
+.credentials/
+*.pem
+*.key

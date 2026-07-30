@@ -29,8 +29,14 @@ ENV PYTHONSAFEPATH=1
 # make qm_lux.__version__ report the host's version instead of the image's.
 ENV PYTHONNOUSERSITE=1
 
-# Copy application code (Snakemake workflow, Python package, entry points)
-COPY . .
+# Copy ONLY what the image needs, explicitly. Never `COPY . .` — a deny-list
+# .dockerignore fails open, so anything new and untracked (agent notes, logs,
+# credentials, build artefacts) would silently land in a published image.
+# Needed here: pyproject.toml + README.md (poetry-core reads both at build time)
+# and the package source. The Snakemake workflow itself runs on the HOST and
+# bind-mounts the working directory, so workflow/ is deliberately NOT copied.
+COPY pyproject.toml README.md LICENSE ./
+COPY src/ ./src/
 
 # Install qm_lux so importlib.metadata can resolve its version from inside the image.
 # Without an in-image dist-info, qm_lux.__version__ falls back to whatever metadata
