@@ -23,3 +23,12 @@ build/
 *.egg-info/
 # Job/run logs — contain cluster hostnames, internal absolute paths, SLURM accounts
 *.log
+# Generated Snakemake reports — embed absolute paths from the run that produced them
+snakemake_report*.html
+# Local virtualenvs. Poetry writes .venv/.gitignore itself, but don't rely on that.
+.venv/
+venv/
+# Never track credentials
+.credentials/
+*.pem
+*.key
