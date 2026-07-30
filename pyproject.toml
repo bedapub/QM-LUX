@@ -2,10 +2,7 @@
 name = "qm-lux"
 version = "1.0.0"
 description = "Phototoxicity prediction workflow combining QM UV-Vis descriptors with machine learning"
-authors = [
-    "Nicolo Milani <nicolo.milani@roche.com>",
-    "Roland Schmucki <roland.schmucki@roche.com>",
-]
+authors = ["QM-LUX contributors"]
 license = "Apache-2.0"
 readme = "README.md"
 homepage = "https://github.com/bedapub/QM-LUX"

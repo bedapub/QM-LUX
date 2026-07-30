@@ -64,7 +64,7 @@ Results appear in `<results_directory>/summary.csv` and a per-compound HTML repo
 - [Gaussian setup](#gaussian-setup)
 - [Important notes](#important-notes)
 - [Troubleshooting](#troubleshooting)
-- [Contributors](#contributors)
+- [Support](#support)
 - [Citation](#citation)
 - [License](#license)
 
@@ -328,6 +328,32 @@ Phase 2:  uvvis → model → prediction → get_results → summarize_results
 
 ### Workflow DAG
 
+The two Snakemake invocations produce two separate rule graphs. Phase 1 stops after
+`xtb_conf`, which writes the per-molecule SDF files; phase 2 picks those files up as
+its starting point, which is why `crest` appears as a root node rather than as a
+child of `preparation`.
+
+**Phase 1** — target `xtb_conf`:
+
+![Phase 1 rule graph: preparation followed by xtb_conf](docs/dag_phase1.png)
+
+**Phase 2** — target `all`:
+
+![Phase 2 rule graph: crest branching into gaussian_preparation and xtb, through uvvis, model, prediction, get_results, summarize_results and report_tables to all](docs/dag_phase2.png)
+
+Regenerate the graphs from `workflow/` (requires Graphviz for `dot`):
+
+```bash
+cd workflow
+# Phase 1
+snakemake --rulegraph -- xtb_conf | dot -Tpng -Grankdir=LR > ../docs/dag_phase1.png
+# Phase 2 — run after phase 1 has produced the SDF files
+snakemake --rulegraph | dot -Tpng -Grankdir=LR > ../docs/dag_phase2.png
+```
+
+> The `--` before the target name is required: without it Snakemake 9 reads `xtb_conf`
+> as the graph output format.
+
 | Rule | Container | Description |
 |---|:---:|---|
 | `preparation` | yes | Parse SMILES input; generate 3D conformers with RDKit MMFF94s |
@@ -341,6 +367,7 @@ Phase 2:  uvvis → model → prediction → get_results → summarize_results
 | `prediction` | yes | Load model and scaler; output phototoxicity predictions |
 | `get_results` | yes | Aggregate results into CSV + HTML report with molecular images |
 | `summarize_results` | no | Write final `summary.csv` |
+| `report_tables` | no | Render `summary.csv`, `UVvis.csv` and the failed-molecule list as HTML for the Snakemake report |
 
 ---
 
@@ -469,7 +496,7 @@ model_arv_folder_name:   # leave empty if model files are at collection root
 
 ### About the bundled model
 
-The bundled model (v1.0.0) is a Random Forest classifier trained on an internal Roche phototoxicity reference dataset.
+The bundled model (v1.0.0) is a Random Forest classifier trained on an internal phototoxicity reference dataset that is not distributed with this repository.
 
 **Model file formats**
 
@@ -548,28 +575,16 @@ The report is a single self-contained HTML file and includes:
 
 ### Unit tests
 
+Unit tests run in the Poetry development environment. The container image ships
+only the runtime dependencies — `pytest` and the `tests/` tree are deliberately
+not included — so unit tests cannot be run inside the image.
+
 ```bash
-# With Poetry (preferred for development — no container required)
+# Set up the development environment once (see Development install)
+poetry install --with dev
+
+# Run the unit tests
 poetry run pytest tests/unit/ -q
-
-# Inside the Singularity image — useful on HPC where the Poetry env is not available.
-# PYTHONPATH puts your local checkout ahead of the copy installed in the image,
-# so code changes are picked up without rebuilding.
-cd /path/to/qm-lux          # repo root
-singularity exec --cleanenv \
-    --env PYTHONPATH=/src \
-    --bind /path/to/qm-lux/src:/src \
-    /path/to/qm-lux.sif \
-    python -m pytest tests/unit/ -q
-
-# Inside Docker — equivalent approach
-cd /path/to/qm-lux          # repo root
-docker run --rm \
-    -e PYTHONPATH=/src \
-    -v /path/to/qm-lux/src:/src \
-    -v /path/to/qm-lux/tests:/app/tests \
-    ghcr.io/bedapub/qm-lux:1.0.0 \
-    python -m pytest tests/unit/ -q
 ```
 
 All 294 tests must pass on a clean checkout.
@@ -689,12 +704,7 @@ Increase `mem_mb` for the failing rule in `workflow/profiles/slurm/config.yaml`.
 
 ---
 
-## Contributors
-
-- Nicolò Milani (development, validation, data analysis), PMDA, PS
-- Andrea Anelli (UV-Vis prediction), pCMC, TMo
-- Michael Reutlinger (technical and scientific support), MedChem CADD, TMo
-- Roland Schmucki (Snakemake implementation), PMDA, PS
+## Support
 
 For bug reports and feature requests, please open an issue on [GitHub](https://github.com/bedapub/QM-LUX/issues).
 
