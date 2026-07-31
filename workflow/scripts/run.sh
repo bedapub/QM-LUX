@@ -10,28 +10,33 @@ set -uo pipefail
 function usage()
 {
   echo ""
-  echo "Usage: run.sh <config.yaml> [target] [cores]"
-  echo "       run.sh <config.yaml> [cores]"
+  echo "Usage: run.sh <config.yaml> [--cores N] [--target RULE]"
   echo ""
-  echo "1 input argument(s) required:"
-  echo "  1. input config.yaml file"
+  echo "Runs the complete QM-LUX pipeline -- conformer generation, CREST/XTB,"
+  echo "Gaussian TD-DFT, UV-Vis descriptors, ML prediction and the HTML report."
+  echo "Gaussian is part of the workflow; you do not run it yourself."
   echo ""
-  echo "2 optional argument(s):"
-  echo "  1. target rule -- stop after this rule (default: run everything)"
-  echo "  2. nr of cores -- giving this switches to a LOCAL run"
+  echo "Required:"
+  echo "  <config.yaml>       input configuration file"
   echo ""
-  echo "Common cases -- both run the COMPLETE pipeline, Gaussian included:"
-  echo "  run.sh cfg.yaml                 cluster (SLURM profile)"
-  echo "  run.sh cfg.yaml 8               local with 8 cores"
+  echo "Options:"
+  echo "  --cores N           run LOCALLY on N cores."
+  echo "                      Omit to submit through the SLURM profile."
+  echo "  --target RULE       stop after RULE instead of running everything."
+  echo "                      For debugging a single stage; 'all' means the"
+  echo "                      full pipeline and is the same as omitting it."
+  echo "  -h, --help          show this help and exit"
   echo ""
-  echo "The core count may also be given after an explicit 'all', which means"
-  echo "the same thing as omitting the target:"
-  echo "  run.sh cfg.yaml all             cluster (SLURM profile)"
-  echo "  run.sh cfg.yaml all 8           local with 8 cores"
+  echo "Examples:"
+  echo "  run.sh cfg.yaml                        cluster, full pipeline"
+  echo "  run.sh cfg.yaml --cores 8              local on 8 cores, full pipeline"
+  echo "  run.sh cfg.yaml --target xtb_conf      cluster, stop after xtb_conf"
+  echo "  run.sh cfg.yaml --target xtb_conf --cores 8"
+  echo "                                         local on 8 cores, stop after xtb_conf"
   echo ""
-  echo "Stopping early is for debugging a single stage:"
-  echo "  run.sh cfg.yaml xtb_conf        cluster, stop after xtb_conf"
-  echo "  run.sh cfg.yaml xtb_conf 8      local with 8 cores, stop after xtb_conf"
+  echo "Positional form (still supported, equivalent to the above):"
+  echo "  run.sh cfg.yaml [target] [cores]       e.g. run.sh cfg.yaml xtb_conf 8"
+  echo "  run.sh cfg.yaml [cores]                e.g. run.sh cfg.yaml 8"
   echo ""
   echo "The HTML report is generated for a complete run only; a run stopping at"
   echo "an intermediate rule has no predictions to report on."
@@ -41,40 +46,140 @@ function usage()
   echo ""
 }
 
-if [[ $# -lt 1 ]]; then usage && exit 1; fi
-if [[ $# -gt 3 ]]; then
-  echo "Error: too many arguments ($# given, at most 3 accepted)." >&2
+# Argument parsing accepts named options and the original positional form. Named
+# options win where both could apply, and giving the same thing twice is an error
+# rather than a silent last-one-wins.
+config_file=""
+target=""
+cores=""
+target_set=false
+cores_set=false
+positional=()
+
+# Rejects a missing value, and a value that is itself a flag -- otherwise
+# `--target --cores 8` would silently take "--cores" as the rule name.
+function need_value()
+{
+  # $1 = flag name, $2 = "has next arg" (true/false), $3 = next arg
+  if [[ "$2" != true ]]; then
+    echo "Error: $1 requires a value." >&2
+    usage && exit 1
+  fi
+  if [[ "$3" == -* ]]; then
+    echo "Error: $1 requires a value, got the flag '$3'." >&2
+    usage && exit 1
+  fi
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --target)
+      [[ $# -gt 1 ]] && has_next=true || has_next=false
+      need_value "--target" "$has_next" "${2:-}"
+      if $target_set; then
+        echo "Error: --target given more than once." >&2
+        usage && exit 1
+      fi
+      target="$2"; target_set=true; shift 2
+      ;;
+    --target=*)
+      if $target_set; then
+        echo "Error: --target given more than once." >&2
+        usage && exit 1
+      fi
+      target="${1#--target=}"
+      if [[ -z "$target" ]]; then
+        echo "Error: --target requires a value." >&2
+        usage && exit 1
+      fi
+      target_set=true; shift
+      ;;
+    --cores)
+      [[ $# -gt 1 ]] && has_next=true || has_next=false
+      need_value "--cores" "$has_next" "${2:-}"
+      if $cores_set; then
+        echo "Error: --cores given more than once." >&2
+        usage && exit 1
+      fi
+      cores="$2"; cores_set=true; shift 2
+      ;;
+    --cores=*)
+      if $cores_set; then
+        echo "Error: --cores given more than once." >&2
+        usage && exit 1
+      fi
+      cores="${1#--cores=}"
+      if [[ -z "$cores" ]]; then
+        echo "Error: --cores requires a value." >&2
+        usage && exit 1
+      fi
+      cores_set=true; shift
+      ;;
+    -*)
+      echo "Error: unknown option '$1'." >&2
+      usage && exit 1
+      ;;
+    *)
+      positional+=("$1")
+      shift
+      ;;
+  esac
+done
+
+n_pos=${#positional[@]}
+if [[ $n_pos -lt 1 ]]; then usage && exit 1; fi
+if [[ $n_pos -gt 3 ]]; then
+  echo "Error: too many positional arguments ($n_pos given, at most 3 accepted)." >&2
   usage && exit 1
 fi
 
-config_file=$1
+config_file="${positional[0]}"
 if [[ ! -f "$config_file" ]]; then
   echo "Error: config file not found: $config_file" >&2
   usage && exit 1
 fi
 
-# Argument 2 is either a target rule or, when it is a number, the core count --
-# so that the common "run everything locally" case is just `run.sh cfg.yaml 8`
-# and does not have to name a target at all.
-target="${2:-}"
-cores=""
-if [[ "$target" =~ ^[0-9]+$ ]]; then
-  if [[ $# -gt 2 ]]; then
-    echo "Error: '$target' was read as a core count, so '$3' is unexpected." >&2
-    echo "       Use either 'run.sh $config_file $target'" >&2
-    echo "       or      'run.sh $config_file <target> $3'." >&2
-    usage && exit 1
+# Positional 2 is either a target rule or, when it is a number, the core count,
+# so that `run.sh cfg.yaml 8` needs no target. A rule genuinely named like a
+# number is still reachable with --target.
+if [[ $n_pos -ge 2 ]]; then
+  pos2="${positional[1]}"
+  if [[ "$pos2" =~ ^[0-9]+$ ]]; then
+    if [[ $n_pos -gt 2 ]]; then
+      echo "Error: '$pos2' was read as a core count, so '${positional[2]}' is unexpected." >&2
+      echo "       Use either 'run.sh $config_file $pos2'" >&2
+      echo "       or      'run.sh $config_file <target> $pos2'." >&2
+      usage && exit 1
+    fi
+    if $cores_set; then
+      echo "Error: core count given twice (--cores $cores and positional $pos2)." >&2
+      usage && exit 1
+    fi
+    cores="$pos2"; cores_set=true
+  else
+    if $target_set; then
+      echo "Error: target given twice (--target $target and positional $pos2)." >&2
+      usage && exit 1
+    fi
+    target="$pos2"; target_set=true
+    if [[ $n_pos -ge 3 ]]; then
+      if $cores_set; then
+        echo "Error: core count given twice (--cores $cores and positional ${positional[2]})." >&2
+        usage && exit 1
+      fi
+      cores="${positional[2]}"; cores_set=true
+    fi
   fi
-  cores=$target
-  target=""
-elif [[ $# -gt 2 ]]; then
-  cores=$3
 fi
 
 # 'all' is the full pipeline, which is exactly what an empty target means. Treat
-# them as the same thing so `run.sh cfg.yaml all 8` runs the complete pipeline
-# rather than a single cold 'all' invocation -- see the two-invocation note below
-# for why that distinction matters.
+# them as the same thing so `--target all` runs the complete pipeline rather than
+# a single cold 'all' invocation -- see the two-invocation note below for why
+# that distinction matters.
 if [[ "$target" == "all" ]]; then
   target=""
 fi
