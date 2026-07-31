@@ -11,22 +11,30 @@ function usage()
 {
   echo ""
   echo "Usage: run.sh <config.yaml> [target] [cores]"
+  echo "       run.sh <config.yaml> [cores]"
   echo ""
   echo "1 input argument(s) required:"
   echo "  1. input config.yaml file"
   echo ""
   echo "2 optional argument(s):"
-  echo "  1. target rule -- run only up to this rule (default: full pipeline)"
+  echo "  1. target rule -- stop after this rule (default: run everything)"
   echo "  2. nr of cores -- giving this switches to a LOCAL run"
   echo ""
-  echo "Execution mode is chosen by the number of arguments:"
-  echo "  run.sh cfg.yaml                 cluster (SLURM profile), full pipeline"
-  echo "  run.sh cfg.yaml xtb_conf        cluster (SLURM profile), stop after xtb_conf"
-  echo "  run.sh cfg.yaml xtb_conf 8      local with 8 cores, stop after xtb_conf"
-  echo "  run.sh cfg.yaml all 8           local with 8 cores, full pipeline"
+  echo "Common cases -- both run the COMPLETE pipeline, Gaussian included:"
+  echo "  run.sh cfg.yaml                 cluster (SLURM profile)"
+  echo "  run.sh cfg.yaml 8               local with 8 cores"
   echo ""
-  echo "The HTML report is generated only for a completed full run (target 'all'"
-  echo "or no target); a run stopping at an intermediate rule has nothing to report."
+  echo "The core count may also be given after an explicit 'all', which means"
+  echo "the same thing as omitting the target:"
+  echo "  run.sh cfg.yaml all             cluster (SLURM profile)"
+  echo "  run.sh cfg.yaml all 8           local with 8 cores"
+  echo ""
+  echo "Stopping early is for debugging a single stage:"
+  echo "  run.sh cfg.yaml xtb_conf        cluster, stop after xtb_conf"
+  echo "  run.sh cfg.yaml xtb_conf 8      local with 8 cores, stop after xtb_conf"
+  echo ""
+  echo "The HTML report is generated for a complete run only; a run stopping at"
+  echo "an intermediate rule has no predictions to report on."
   echo ""
   echo "Environment variables:"
   echo "  QM_LUX_SIF_DIR  directory containing qm-lux.sif (default: repo root)"
@@ -45,31 +53,47 @@ if [[ ! -f "$config_file" ]]; then
   usage && exit 1
 fi
 
-# Target rule. Empty means "full pipeline" (both phases, see below).
+# Argument 2 is either a target rule or, when it is a number, the core count --
+# so that the common "run everything locally" case is just `run.sh cfg.yaml 8`
+# and does not have to name a target at all.
 target="${2:-}"
+cores=""
 if [[ "$target" =~ ^[0-9]+$ ]]; then
-  echo "Error: target '$target' looks like a core count." >&2
-  echo "       The target rule comes before the core count:" >&2
-  echo "         run.sh $config_file <target> $target" >&2
-  usage && exit 1
+  if [[ $# -gt 2 ]]; then
+    echo "Error: '$target' was read as a core count, so '$3' is unexpected." >&2
+    echo "       Use either 'run.sh $config_file $target'" >&2
+    echo "       or      'run.sh $config_file <target> $3'." >&2
+    usage && exit 1
+  fi
+  cores=$target
+  target=""
+elif [[ $# -gt 2 ]]; then
+  cores=$3
+fi
+
+# 'all' is the full pipeline, which is exactly what an empty target means. Treat
+# them as the same thing so `run.sh cfg.yaml all 8` runs the complete pipeline
+# rather than a single cold 'all' invocation -- see the two-invocation note below
+# for why that distinction matters.
+if [[ "$target" == "all" ]]; then
+  target=""
 fi
 
 # Cores are given only for a local run; without them we submit to the cluster.
 run_local=false
-cores=""
-if [[ $# -gt 2 ]]; then
+if [[ -n "$cores" ]]; then
   run_local=true
-  cores=$3
   if [[ ! "$cores" =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: cores must be a positive integer, got '$cores'." >&2
     usage && exit 1
   fi
 fi
 
-# snakemake runs on the HOST (it is not shipped in the container image), so a
-# missing snakemake is an environment problem, not a workflow failure. Catch it
-# here rather than letting two 'command not found' exits surface as a generic
-# "one or more snakemake processes failed".
+# snakemake orchestrates the containers, so it has to be on the HOST -- the image
+# does ship a snakemake env (Dockerfile), but that copy is not what drives this
+# run. A missing host snakemake is an environment problem, not a workflow
+# failure, so catch it here rather than letting two 'command not found' exits
+# surface as a generic "one or more snakemake processes failed".
 if ! command -v snakemake &>/dev/null; then
   echo "Error: snakemake not found in PATH." >&2
   echo "       Activate the conda/virtual environment that provides it before" >&2
@@ -153,22 +177,34 @@ function run_snakemake()
 snakemake_exit_code=0
 
 if [[ -n "$target" ]]; then
-    # An explicit target: run exactly that and stop. Note 'all' is a valid
-    # target here and does NOT re-run phase 1 -- this is the documented
-    # phase-2 invocation, used after Gaussian has produced its log.out files.
-    echo "Run snakemake up to target: $target"
+    # An intermediate target: run exactly that and stop. Only reachable for
+    # targets other than 'all', which was normalised to "" above.
+    echo "Running up to target: $target"
     run_snakemake "$target"
     snakemake_exit_code=$?
 else
-    # No target: run both phases back to back. Phase 2 can only succeed if
-    # Gaussian has already been run for this results directory (see the
-    # two-phase section in the README), so on a cold run part 2 is expected
-    # to do nothing.
-    echo "Run snakemake part 1: preparation and xtb configuration"
+    # Complete run. This is deliberately TWO snakemake invocations, and it is an
+    # internal implementation detail -- not two things the user has to run, and
+    # not a manual Gaussian step in between. Gaussian is rule gaussian_runner and
+    # is scheduled by snakemake in the second invocation like any other rule.
+    #
+    # Why two: rule uvvis derives its inputs by listing the per-molecule
+    # directories under <results_directory>/data_ml/0/, and snakemake evaluates
+    # that while BUILDING the DAG. On a cold run those directories do not exist
+    # yet -- rule preparation creates them -- so a single invocation plans a DAG
+    # with crest, xtb, gaussian_preparation and gaussian_runner missing entirely
+    # and uvvis holding no inputs, which then fails at uvvis.
+    #
+    # Running the first invocation to completion puts the directories on disk;
+    # because the second invocation is a separate PROCESS it re-evaluates the
+    # listing and builds the complete DAG. Converting preparation to a snakemake
+    # checkpoint would collapse this into one invocation and let this branch go
+    # away; until then, do not "simplify" it into a single call.
+    echo "Stage 1 of 2: preparation and conformer setup"
     run_snakemake xtb_conf
     snakemake_exit_code=$?
 
-    echo "Run snakemake part 2: prediction"
+    echo "Stage 2 of 2: CREST/XTB, Gaussian, UV-Vis descriptors and prediction"
     run_snakemake all
     # Combine exit status of part 1 and part 2
     snakemake_exit_code=$((snakemake_exit_code + $?))
@@ -180,10 +216,10 @@ if [[ $snakemake_exit_code -ne 0 ]]; then
     exit 1
 fi
 
-# Generate the HTML report only when the whole pipeline has completed -- i.e.
-# for a full run (no target) or an explicit 'all'. A run stopping at an
-# intermediate rule has no predictions to report on.
-if [[ -z "$target" || "$target" == "all" ]]; then
+# Generate the HTML report only when the whole pipeline has completed. A run
+# stopping at an intermediate rule has no predictions to report on. ('all' was
+# normalised to an empty target above, so -z covers both spellings.)
+if [[ -z "$target" ]]; then
     report_file="${results_directory}.html"
     echo "Generating report -> $report_file"
     bash "$(dirname "${BASH_SOURCE[0]}")/run_report.sh" "$config_file" "$report_file"
