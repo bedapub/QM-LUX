@@ -215,7 +215,21 @@ pytest tests/unit/ -q
 
 The Snakemake workflow is the primary execution method. It handles job submission, checkpointing, and parallelism automatically. The `run.sh` script wraps both phases and passes Singularity arguments from the config file.
 
-Ensure `snakemake` is in your `PATH` before calling `run.sh` — activate your conda environment or virtual environment first if needed.
+Ensure `snakemake` is in your `PATH` before calling `run.sh` — activate your conda environment or virtual environment first if needed. `run.sh` checks for it and exits with a clear message if it is missing.
+
+#### `run.sh` arguments
+
+```
+./scripts/run.sh <config.yaml> [target] [cores]
+```
+
+| Arguments | Execution mode | Runs |
+|---|---|---|
+| `config.yaml` | cluster (SLURM profile) | full pipeline, both phases |
+| `config.yaml target` | cluster (SLURM profile) | stops after `target` |
+| `config.yaml target cores` | local, `cores` cores | stops after `target` |
+
+**Passing `cores` is what selects a local run** — the target rule alone does not. The HTML report is generated only for a completed full run (target `all`, or no target at all); a run that stops at an intermediate rule such as `xtb_conf` has no predictions to report on and the report step is skipped.
 
 ### Configuration
 
@@ -284,7 +298,7 @@ QM_LUX_SIF_DIR=/path/to/sif/dir \
 
 ### Running on a SLURM cluster
 
-Omit the rule and cores arguments — `run.sh` detects this and switches to the SLURM profile:
+Omit the **cores** argument — `run.sh` detects this and switches to the SLURM profile. The target rule is still passed, so each phase stops where it should:
 
 ```bash
 cd workflow
@@ -314,7 +328,19 @@ set-resources:
 
 ### Two-phase execution and Gaussian
 
-The workflow splits into two Snakemake invocations because Gaussian (the TD-DFT engine) is commercial and cannot be bundled in the open-source image. The `gaussian_runner` rule has **no** `container:` directive and runs on the host.
+The workflow runs as two Snakemake invocations with an external Gaussian step in between. Two separate things are going on here, and it is worth keeping them apart:
+
+**Why Gaussian runs on the host.** Gaussian (the TD-DFT engine) is commercial and cannot be bundled in the open-source image, so the `gaussian_runner` rule has **no** `container:` directive and executes on the host with your own licensed installation. This is a licensing constraint, and it is permanent.
+
+**Why there are two invocations.** This is an implementation detail, not a consequence of the above — a rule without a `container:` directive runs on the host perfectly well inside a single invocation. The actual reason is that `rule uvvis` determines its inputs by listing the per-molecule directories under `<results_directory>/data_ml/0/` on disk:
+
+```python
+subdir=list_directories(os.path.join(outdir, "data_ml", "0"))
+```
+
+Snakemake evaluates this while **building the DAG**, before any rule has run. On a first run those directories do not exist yet — they are created by `preparation` — so the listing returns nothing and phase 2 cannot see its own inputs. Running phase 1 to completion first puts them on disk, so the second invocation builds a complete DAG.
+
+> Converting the CREST/XTB step to a Snakemake [checkpoint](https://snakemake.readthedocs.io/en/stable/snakefiles/rules.html#data-dependent-conditional-execution) would let Snakemake re-evaluate the DAG after `preparation` and collapse this into a single invocation. That change is not implemented yet.
 
 ```
 Phase 1:  preparation → xtb_conf → [CREST/XTB inside container]
