@@ -97,6 +97,19 @@ if [[ "$phase1_targets" != *" ${target:-} "* ]] && ! command -v g16 &>/dev/null;
   echo "         before the Gaussian step. Continuing." >&2
 fi
 
+# Forward the Arvados token into the container.
+#
+# The 'model' rule runs inside the image and mode 3 reads $ARVADOS_API_TOKEN
+# there, but the documented singularity_args_param includes --cleanenv, which
+# strips the host environment -- so the plain variable never arrives and the
+# rule fails on an unset variable. Singularity passes SINGULARITYENV_*-prefixed
+# variables through even under --cleanenv, and strips the prefix on the way in,
+# so exporting the prefixed name here makes $ARVADOS_API_TOKEN visible to the
+# rule without weakening --cleanenv for anything else.
+if [[ -n "${ARVADOS_API_TOKEN:-}" ]]; then
+  export SINGULARITYENV_ARVADOS_API_TOKEN="$ARVADOS_API_TOKEN"
+fi
+
 results_directory="$(grep -w -m1 '^results_directory:' "$config_file" | awk '{print $2}' | sed "s/'//g")"
 model_method="$(grep -w -m1 '^model_method:' "$config_file" | awk '{print $2}' | sed "s/'//g")"
 model_descriptor="$(grep -w -m1 '^model_descriptor:' "$config_file" | awk '{print $2}' | sed "s/'//g")"

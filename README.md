@@ -529,6 +529,8 @@ model_arv_keepweb_url: https://collections.example.com
 model_arv_folder_name:   # leave empty if model files are at collection root
 ```
 
+> The `model` rule runs **inside** the container, and the recommended `singularity_args_param` includes `--cleanenv`, which strips the host environment — so a plain exported variable does not reach the rule. `run.sh` handles this by re-exporting the token as `SINGULARITYENV_ARVADOS_API_TOKEN`, which Singularity forwards even under `--cleanenv`. If you invoke `snakemake` directly instead of through `run.sh`, export that prefixed name yourself (or drop `--cleanenv`), otherwise the rule fails on an unset variable.
+
 ### About the bundled model
 
 The bundled model (v1.0.0) is a Random Forest classifier trained on an internal phototoxicity reference dataset that is not distributed with this repository.
