@@ -41,7 +41,7 @@ cd workflow
 QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml
 
 # or locally, on N cores
-QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml <N_cores>
+QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml --cores <N>
 ```
 
 Results appear in `<results_directory>/summary.csv` and a per-compound HTML report.
@@ -228,27 +228,37 @@ Ensure `snakemake` is in your `PATH` before calling `run.sh` — activate your c
 #### `run.sh` arguments
 
 ```
-./scripts/run.sh <config.yaml> [cores]
-./scripts/run.sh <config.yaml> [target] [cores]
+./scripts/run.sh <config.yaml> [--cores N] [--target RULE]
 ```
+
+| Option | Effect |
+|---|---|
+| *(none)* | Run the complete pipeline, submitted through the SLURM profile |
+| `--cores N` | Run **locally** on `N` cores instead of submitting to SLURM |
+| `--target RULE` | Stop after `RULE` instead of running everything (debugging) |
+| `-h`, `--help` | Show usage and exit |
 
 The two forms you normally need — both run the **complete** pipeline, Gaussian included:
 
-| Command | Execution mode |
-|---|---|
-| `./scripts/run.sh config.yaml` | cluster (SLURM profile) |
-| `./scripts/run.sh config.yaml 8` | local, 8 cores |
+```bash
+./scripts/run.sh config/my_run.yaml              # cluster
+./scripts/run.sh config/my_run.yaml --cores 8    # local, 8 cores
+```
 
-**Passing `cores` is what selects a local run**; without it the run is submitted through the SLURM profile. Writing `all` explicitly is accepted and means the same as omitting the target, so `./scripts/run.sh config.yaml all 8` is equivalent to `./scripts/run.sh config.yaml 8`.
+**`--cores` is what selects a local run**; without it the run goes through the SLURM profile. `--target all` means the full pipeline and is identical to omitting `--target`.
 
 Stopping early is a debugging affordance, not part of normal use:
 
-| Command | Execution mode | Runs |
-|---|---|---|
-| `./scripts/run.sh config.yaml xtb_conf` | cluster (SLURM profile) | stops after `xtb_conf` |
-| `./scripts/run.sh config.yaml xtb_conf 8` | local, 8 cores | stops after `xtb_conf` |
+```bash
+./scripts/run.sh config/my_run.yaml --target xtb_conf             # cluster
+./scripts/run.sh config/my_run.yaml --target xtb_conf --cores 8   # local
+```
+
+Options may be given in any order. `--cores=8` and `--target=xtb_conf` are also accepted.
 
 The HTML report is generated for a complete run only; a run that stops at an intermediate rule has no predictions to report on, and the report step is skipped.
+
+> **Positional arguments still work.** The older `run.sh <config.yaml> [target] [cores]` form is unchanged, so existing scripts and cluster job files keep working: `./scripts/run.sh config/my_run.yaml xtb_conf 8` is the same as `--target xtb_conf --cores 8`, and a lone number is read as the core count (`./scripts/run.sh config/my_run.yaml 8`). Mixing the two forms for the *same* value is rejected rather than silently resolved.
 
 ### Configuration
 
@@ -305,7 +315,7 @@ Pass the number of cores. That single command runs the whole pipeline — confor
 cd workflow
 
 QM_LUX_SIF_DIR=/path/to/sif/dir \
-  ./scripts/run.sh config/my_run.yaml <N_cores>
+  ./scripts/run.sh config/my_run.yaml --cores <N>
 ```
 
 Gaussian must be on your `PATH` (see [Gaussian setup](#gaussian-setup)); `run.sh` calls it for you.
@@ -719,7 +729,7 @@ If you already have a `test_set_with_fP_rdkit_prop_UVvis.pkl` descriptor file, p
 ```bash
 cd workflow
 QM_LUX_SIF_DIR=/path/to/sif/dir \
-  ./scripts/run.sh config/my_run.yaml all <N_cores>
+  ./scripts/run.sh config/my_run.yaml --cores <N>
 ```
 
 Snakemake will skip any already-completed rules (including `gaussian_runner`) and proceed from the descriptor file.
