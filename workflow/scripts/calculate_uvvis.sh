@@ -53,7 +53,6 @@ fi
 
 if ! command -v g16 &>/dev/null; then
   echo "ERROR: g16 not found in PATH. Activate Gaussian 16 before running this script."
-  echo "  Lmod/module system:  module load Gaussian/16.B.01"
   echo "  Manual install:      source /path/to/g16/bsd/g16.profile"
   exit 1
 fi

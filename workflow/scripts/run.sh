@@ -77,6 +77,26 @@ if ! command -v snakemake &>/dev/null; then
   exit 1
 fi
 
+# Gaussian check -- a WARNING, never a hard failure.
+#
+# 'gaussian_runner' is the one rule with no container: directive, so it needs g16
+# on the host. Two reasons this must not be fatal:
+#   * on a cluster the rule runs via SLURM on a COMPUTE node, which may provide
+#     g16 even when the submit node's PATH does not;
+#   * calculate_uvvis.sh already checks g16 at the point of use and errors there
+#     with an actionable message.
+# It is also irrelevant to targets that never reach gaussian_runner, so only warn
+# for targets that do. Keep this list in sync with the Snakefile: these are the
+# phase-1 rules upstream of gaussian_runner (plus 'model', which is independent).
+phase1_targets=" preparation xtb_conf crest xtb model gaussian_preparation "
+if [[ "$phase1_targets" != *" ${target:-} "* ]] && ! command -v g16 &>/dev/null; then
+  echo "Warning: g16 not found in PATH." >&2
+  echo "         The gaussian_runner rule runs on the host and needs Gaussian 16." >&2
+  echo "         Ignore this if g16 is provided on the compute nodes rather than" >&2
+  echo "         here; otherwise activate it (source /path/to/g16/bsd/g16.profile)" >&2
+  echo "         before the Gaussian step. Continuing." >&2
+fi
+
 results_directory="$(grep -w -m1 '^results_directory:' "$config_file" | awk '{print $2}' | sed "s/'//g")"
 model_method="$(grep -w -m1 '^model_method:' "$config_file" | awk '{print $2}' | sed "s/'//g")"
 model_descriptor="$(grep -w -m1 '^model_descriptor:' "$config_file" | awk '{print $2}' | sed "s/'//g")"

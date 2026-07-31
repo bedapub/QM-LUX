@@ -11,7 +11,16 @@ QM-LUX predicts the phototoxicity of small molecules using UV-Vis spectra comput
 
 ## Quick start
 
-1. **Pull the image**
+1. **Clone the repository**
+
+```bash
+git clone https://github.com/bedapub/QM-LUX.git
+cd QM-LUX
+```
+
+The image ships the `qm_lux` Python package only — it does **not** contain the Snakemake workflow. `run.sh`, the `Snakefile` and the example configs come from this repository, and Snakemake runs on the host and bind-mounts your working directory into the container. You need both the clone and the image.
+
+2. **Pull the image**
 
 ```bash
 # Singularity (required for the Snakemake workflow)
@@ -21,18 +30,18 @@ singularity pull qm-lux.sif docker://ghcr.io/bedapub/qm-lux:1.0.0
 docker pull ghcr.io/bedapub/qm-lux:1.0.0
 ```
 
-2. **Prepare input** — a CSV with `SRN` and `SMILES` columns (see [Configuration](#configuration))
+3. **Prepare input** — a CSV with `SRN` and `SMILES` columns (see [Configuration](#configuration))
 
-3. **Phase 1** — conformer generation with CREST/XTB (runs inside the container)
+4. **Phase 1** — conformer generation with CREST/XTB (runs inside the container)
 
 ```bash
 cd workflow
 QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml xtb_conf <N_cores>
 ```
 
-4. **Run Gaussian 16** on the generated `.gjf` input files — external step; see [Gaussian setup](#gaussian-setup)
+5. **Run Gaussian 16** on the generated `.gjf` input files — external step; see [Gaussian setup](#gaussian-setup)
 
-5. **Phase 2** — UV-Vis descriptors, ML prediction, HTML report
+6. **Phase 2** — UV-Vis descriptors, ML prediction, HTML report
 
 ```bash
 QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml all <N_cores>
@@ -672,14 +681,17 @@ Gaussian 16 is **not bundled in the container** (commercial license). It must be
 The script `workflow/scripts/calculate_uvvis.sh` calls `g16` directly and requires it to be in `PATH`:
 
 ```bash
-# Lmod / module system:
-module load Gaussian/16.B.01
+# Environment-module system (Lmod / Environment Modules) — the module name is
+# site-specific; ask your administrator or check `module avail gaussian`:
+module load <your-site-gaussian-module>
 
 # Manual installation:
 source /path/to/g16/bsd/g16.profile
 ```
 
 Then run the workflow normally. For SLURM, load the module once before calling `run.sh` — Snakemake exports `PATH` to batch jobs.
+
+`run.sh` warns if `g16` is not in `PATH` when the requested target could reach `gaussian_runner`. The warning is **not** fatal: on a cluster the rule executes on a compute node, which may provide `g16` even when the submit node does not. Targets that never reach `gaussian_runner` (such as `xtb_conf`) do not trigger it.
 
 The `gaussian_threads` config key (default `12`) controls the number of cores requested per Gaussian job.
 
