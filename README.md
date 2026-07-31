@@ -32,22 +32,21 @@ docker pull ghcr.io/bedapub/qm-lux:1.0.0
 
 3. **Prepare input** — a CSV with `SRN` and `SMILES` columns (see [Configuration](#configuration))
 
-4. **Phase 1** — conformer generation with CREST/XTB (runs inside the container)
+4. **Run the workflow** — one command runs everything: conformer generation, CREST/XTB, Gaussian TD-DFT, UV-Vis descriptors, ML prediction and the HTML report.
 
 ```bash
 cd workflow
-QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml xtb_conf <N_cores>
-```
 
-5. **Run Gaussian 16** on the generated `.gjf` input files — external step; see [Gaussian setup](#gaussian-setup)
+# on a SLURM cluster
+QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml
 
-6. **Phase 2** — UV-Vis descriptors, ML prediction, HTML report
-
-```bash
-QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml all <N_cores>
+# or locally, on N cores
+QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml <N_cores>
 ```
 
 Results appear in `<results_directory>/summary.csv` and a per-compound HTML report.
+
+> Gaussian 16 must be installed and on your `PATH` — it is commercial and cannot be shipped in the image. You do **not** run it yourself: `run.sh` invokes it as part of the workflow. See [Gaussian setup](#gaussian-setup).
 
 ---
 
@@ -62,7 +61,7 @@ Results appear in `<results_directory>/summary.csv` and a per-compound HTML repo
   - [Configuration](#configuration)
   - [Running locally (multi-core)](#running-locally-multi-core)
   - [Running on a SLURM cluster](#running-on-a-slurm-cluster)
-  - [Two-phase execution and Gaussian](#two-phase-execution-and-gaussian)
+  - [How the run is staged internally](#how-the-run-is-staged-internally)
   - [Workflow DAG](#workflow-dag)
 - [Running with the CLI](#running-with-the-cli)
 - [Python API](#python-api)
@@ -229,16 +228,27 @@ Ensure `snakemake` is in your `PATH` before calling `run.sh` — activate your c
 #### `run.sh` arguments
 
 ```
+./scripts/run.sh <config.yaml> [cores]
 ./scripts/run.sh <config.yaml> [target] [cores]
 ```
 
-| Arguments | Execution mode | Runs |
-|---|---|---|
-| `config.yaml` | cluster (SLURM profile) | full pipeline, both phases |
-| `config.yaml target` | cluster (SLURM profile) | stops after `target` |
-| `config.yaml target cores` | local, `cores` cores | stops after `target` |
+The two forms you normally need — both run the **complete** pipeline, Gaussian included:
 
-**Passing `cores` is what selects a local run** — the target rule alone does not. The HTML report is generated only for a completed full run (target `all`, or no target at all); a run that stops at an intermediate rule such as `xtb_conf` has no predictions to report on and the report step is skipped.
+| Command | Execution mode |
+|---|---|
+| `./scripts/run.sh config.yaml` | cluster (SLURM profile) |
+| `./scripts/run.sh config.yaml 8` | local, 8 cores |
+
+**Passing `cores` is what selects a local run**; without it the run is submitted through the SLURM profile. Writing `all` explicitly is accepted and means the same as omitting the target, so `./scripts/run.sh config.yaml all 8` is equivalent to `./scripts/run.sh config.yaml 8`.
+
+Stopping early is a debugging affordance, not part of normal use:
+
+| Command | Execution mode | Runs |
+|---|---|---|
+| `./scripts/run.sh config.yaml xtb_conf` | cluster (SLURM profile) | stops after `xtb_conf` |
+| `./scripts/run.sh config.yaml xtb_conf 8` | local, 8 cores | stops after `xtb_conf` |
+
+The HTML report is generated for a complete run only; a run that stops at an intermediate rule has no predictions to report on, and the report step is skipped.
 
 ### Configuration
 
@@ -289,35 +299,30 @@ CPD-002,CC(=O)Oc1ccccc1C(=O)O
 
 ### Running locally (multi-core)
 
+Pass the number of cores. That single command runs the whole pipeline — conformer generation, CREST/XTB, Gaussian, UV-Vis descriptors, prediction and the HTML report:
+
 ```bash
 cd workflow
 
-# Phase 1: conformer generation and CREST/XTB
 QM_LUX_SIF_DIR=/path/to/sif/dir \
-  ./scripts/run.sh config/my_run.yaml xtb_conf <N_cores>
-
-# --- Gaussian runs externally here (see Two-phase section) ---
-
-# Phase 2: UV-Vis descriptors, ML prediction, HTML report
-QM_LUX_SIF_DIR=/path/to/sif/dir \
-  ./scripts/run.sh config/my_run.yaml all <N_cores>
+  ./scripts/run.sh config/my_run.yaml <N_cores>
 ```
+
+Gaussian must be on your `PATH` (see [Gaussian setup](#gaussian-setup)); `run.sh` calls it for you.
 
 `run.sh` passes `singularity_args_param` from the config automatically. If `QM_LUX_SIF_DIR` is not set, it defaults to the repository root (two levels above `run.sh`), which is where `singularity pull` places `qm-lux.sif` by default.
 
 ### Running on a SLURM cluster
 
-Omit the **cores** argument — `run.sh` detects this and switches to the SLURM profile. The target rule is still passed, so each phase stops where it should:
+Omit the **cores** argument — `run.sh` detects this and switches to the SLURM profile. Everything else is identical; it is still one command for the whole pipeline:
 
 ```bash
 cd workflow
 
-# Phase 1 (submits CREST jobs via SLURM)
-QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml xtb_conf
-
-# Phase 2 (after Gaussian finishes)
-QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml all
+QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml
 ```
+
+Snakemake submits each rule as its own SLURM job, including `gaussian_runner`, so Gaussian must be available on the **compute** nodes rather than on the submit node.
 
 Adapt the per-rule SLURM resources in `workflow/profiles/slurm/config.yaml` to match your cluster:
 
@@ -335,54 +340,56 @@ set-resources:
     mem_mb: 100000
 ```
 
-### Two-phase execution and Gaussian
+### How the run is staged internally
 
-The workflow runs as two Snakemake invocations with an external Gaussian step in between. Two separate things are going on here, and it is worth keeping them apart:
+**You do not need this section to use QM-LUX** — one `run.sh` call runs everything. It documents an implementation detail you will notice in the log output, and which matters if you invoke `snakemake` directly instead of through `run.sh`.
 
-**Why Gaussian runs on the host.** Gaussian (the TD-DFT engine) is commercial and cannot be bundled in the open-source image, so the `gaussian_runner` rule has **no** `container:` directive and executes on the host with your own licensed installation. This is a licensing constraint, and it is permanent.
+`run.sh` makes **two** Snakemake invocations back to back:
 
-**Why there are two invocations.** This is an implementation detail, not a consequence of the above — a rule without a `container:` directive runs on the host perfectly well inside a single invocation. The actual reason is that `rule uvvis` determines its inputs by listing the per-molecule directories under `<results_directory>/data_ml/0/` on disk:
+```
+Stage 1:  preparation → xtb_conf
+
+Stage 2:  crest → xtb → gaussian_preparation → gaussian_runner → uvvis
+                                                                    ↓
+          model → prediction → get_results → summarize_results → report_tables
+```
+
+**Gaussian is not a manual step.** `gaussian_runner` is an ordinary rule, scheduled by Snakemake inside stage 2 like any other. What is special about it is only that it has **no** `container:` directive — Gaussian is commercial and cannot be bundled in the open-source image, so the rule executes against your own licensed installation on the host. That is a packaging constraint, not a reason for the split.
+
+**Why two invocations.** `rule uvvis` derives its inputs by listing the per-molecule directories under `<results_directory>/data_ml/0/`:
 
 ```python
 subdir=list_directories(os.path.join(outdir, "data_ml", "0"))
 ```
 
-Snakemake evaluates this while **building the DAG**, before any rule has run. On a first run those directories do not exist yet — they are created by `preparation` — so the listing returns nothing and phase 2 cannot see its own inputs. Running phase 1 to completion first puts them on disk, so the second invocation builds a complete DAG.
+Snakemake evaluates that while **building the DAG**, before any rule has run. On a cold run those directories do not exist yet — `preparation` creates them — so the listing returns nothing. A single invocation would then plan a DAG with `crest`, `xtb`, `gaussian_preparation` and `gaussian_runner` **missing entirely** and `uvvis` holding no inputs, and would fail at `uvvis`. Running stage 1 to completion puts the directories on disk; because stage 2 is a separate **process**, it re-evaluates the listing and builds the complete DAG.
 
-> Converting the CREST/XTB step to a Snakemake [checkpoint](https://snakemake.readthedocs.io/en/stable/snakefiles/rules.html#data-dependent-conditional-execution) would let Snakemake re-evaluate the DAG after `preparation` and collapse this into a single invocation. That change is not implemented yet.
+This is why `run.sh` treats `all` as "run both stages" rather than passing it straight through — a bare `snakemake all` on a cold directory hits exactly the truncated DAG described above.
 
-```
-Phase 1:  preparation → xtb_conf → [CREST/XTB inside container]
-                                              ↓
-                                  gaussian_preparation
-                                              ↓
-Gaussian: gaussian_runner  ← host Gaussian 16 required
-                                              ↓
-Phase 2:  uvvis → model → prediction → get_results → summarize_results
-```
+> Converting `preparation` to a Snakemake [checkpoint](https://snakemake.readthedocs.io/en/stable/snakefiles/rules.html#data-dependent-conditional-execution) would let Snakemake re-evaluate the DAG mid-run and collapse this into a single invocation. Not implemented yet; it would not change how `run.sh` is called.
 
 ### Workflow DAG
 
-The two Snakemake invocations produce two separate rule graphs. Phase 1 stops after
-`xtb_conf`, which writes the per-molecule SDF files; phase 2 picks those files up as
-its starting point, which is why `crest` appears as a root node rather than as a
-child of `preparation`.
+The two internal stages (see [How the run is staged internally](#how-the-run-is-staged-internally))
+produce two separate rule graphs. Stage 1 stops after `xtb_conf`, which writes the
+per-molecule SDF files; stage 2 picks those files up as its starting point, which is
+why `crest` appears as a root node rather than as a child of `preparation`.
 
-**Phase 1** — target `xtb_conf`:
+**Stage 1** — target `xtb_conf`:
 
-![Phase 1 rule graph: preparation followed by xtb_conf](docs/dag_phase1.png)
+![Stage 1 rule graph: preparation followed by xtb_conf](docs/dag_phase1.png)
 
-**Phase 2** — target `all`:
+**Stage 2** — target `all`:
 
-![Phase 2 rule graph: crest branching into gaussian_preparation and xtb, through uvvis, model, prediction, get_results, summarize_results and report_tables to all](docs/dag_phase2.png)
+![Stage 2 rule graph: crest branching into gaussian_preparation and xtb, through uvvis, model, prediction, get_results, summarize_results and report_tables to all](docs/dag_phase2.png)
 
 Regenerate the graphs from `workflow/` (requires Graphviz for `dot`):
 
 ```bash
 cd workflow
-# Phase 1
+# Stage 1
 snakemake --rulegraph -- xtb_conf | dot -Tpng -Grankdir=LR > ../docs/dag_phase1.png
-# Phase 2 — run after phase 1 has produced the SDF files
+# Stage 2 — run after stage 1 has produced the SDF files
 snakemake --rulegraph | dot -Tpng -Grankdir=LR > ../docs/dag_phase2.png
 ```
 
@@ -604,7 +611,7 @@ The report is a single self-contained HTML file and includes:
 | **Workflow** | Interactive rule graph for both phases |
 | **Home** | Workflow description, numbered pipeline steps, full references |
 
-> The report requires the full workflow to have completed (including the Gaussian UV-Vis step). It will fail if Phase 2 outputs are missing.
+> The report requires the full workflow to have completed (including the Gaussian UV-Vis step). It will fail if the prediction outputs are missing.
 
 ---
 
@@ -663,7 +670,7 @@ bash tests/integration/run_full_test.sh /path/to/qm-lux.sif 24 /path/to/models/v
 
 The script runs both workflow phases and validates ML predictions against reference outputs (8 checks).
 
-### Integration test (phase-1 only, no Gaussian)
+### Integration test (stage 1 only, no Gaussian)
 
 ```bash
 cd workflow
@@ -707,7 +714,7 @@ export GAUSS_SCRDIR=/scratch/$USER
 
 ### Running without Gaussian
 
-If you already have a `test_set_with_fP_rdkit_prop_UVvis.pkl` descriptor file, place it at `<results_directory>/data_ml/` and run phase 2 directly:
+If you already have a `test_set_with_fP_rdkit_prop_UVvis.pkl` descriptor file, place it at `<results_directory>/data_ml/` and run the downstream rules directly:
 
 ```bash
 cd workflow
@@ -731,7 +738,7 @@ singularity_args_param: "--cleanenv --bind /tmp --bind /scratch/myproject --bind
 
 **`PYTHONNOUSERSITE=1`**: The container also sets this. Singularity auto-mounts `$HOME`, so a stale `qm_lux` install in the caller's user site-packages (`~/.local`, or wherever `PYTHONUSERBASE` points) would otherwise be picked up and make `qm_lux.__version__` report the *host's* version rather than the image's. For older images without this setting, add `--env PYTHONNOUSERSITE=1` or use `--cleanenv`.
 
-**Gaussian is a commercial dependency.** Users without Gaussian can skip to phase 2 if a pre-computed descriptor pickle is available.
+**Gaussian is a commercial dependency.** Users without Gaussian can skip the QM steps if a pre-computed descriptor pickle is available.
 
 **XTB / CREST** are open source and bundled in the container image (XTB 6.4.1, CREST 2.11.2). They are not installed in the Poetry development environment.
 
