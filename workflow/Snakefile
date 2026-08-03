@@ -33,6 +33,31 @@ if not (_model_local or _model_github or _model_arv):
         "model_local_folder, model_github_url, or model_arv_uuid in config."
     )
 
+# Stereochemistry handling for the preparation rule (data_preparation -c).
+#   NO  (default) — enumerate all diastereoisomers of unassigned chiral centres
+#   YES           — keep the existing stereo assignment; requires
+#                   chirality_current_df, the pickle of already-processed
+#                   compounds whose SRNs are excluded from this run
+# Unquoted YAML YES/NO parse as booleans, so accept those spellings too rather
+# than rejecting a config that reads as correct.
+_chirality_raw = config.get("chirality_check", "NO")
+if isinstance(_chirality_raw, bool):
+    _chirality_check = "YES" if _chirality_raw else "NO"
+else:
+    _chirality_check = str(_chirality_raw).strip().upper()
+if _chirality_check not in ("NO", "YES"):
+    raise ValueError(
+        f"chirality_check must be YES or NO, got: {_chirality_raw!r}"
+    )
+
+_chirality_current_df = str(config.get("chirality_current_df", "")).strip()
+if _chirality_check == "YES" and not _chirality_current_df:
+    raise ValueError(
+        "chirality_check: YES also requires chirality_current_df — the path to "
+        "the pickle of already-processed compounds (data_preparation -d). "
+        "Without it data_preparation has no reference set and fails."
+    )
+
 # Constants
 outdir = config["results_directory"]
 
@@ -145,6 +170,14 @@ rule model:
 
 
 rule preparation:
+    """
+    Standardise the input compounds and compute structural features.
+
+    ``chirality_check`` selects how unassigned chiral centres are treated:
+    ``NO`` (the default) enumerates all diastereoisomers, ``YES`` keeps the
+    existing stereo assignment and needs ``chirality_current_df`` — a pickle of
+    already-processed compounds, whose SRNs are excluded from this run.
+    """
     input:
         file=os.path.abspath(config["input_file"]),
     output:
@@ -155,11 +188,20 @@ rule preparation:
     localrule: True
     log:
         "logs/preparation.log",
+    params:
+        chirality_check=_chirality_check,
+        # Expands to "" for the default NO path, so the flag is simply absent.
+        current_df=(
+            f"-d {os.path.abspath(_chirality_current_df)}"
+            if _chirality_check == "YES"
+            else ""
+        ),
     container:
         config["qmlux_image"]
     shell:
         """
-        python -m qm_lux.cli data_preparation -c NO -i {input.file} -o {output.dir} > {output.out}
+        python -m qm_lux.cli data_preparation -c {params.chirality_check} {params.current_df} \
+            -i {input.file} -o {output.dir} > {output.out}
         """
 
 

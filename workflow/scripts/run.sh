@@ -292,6 +292,7 @@ _bind_spec=(
   "input_file:file"
   "results_directory:dir"
   "model_local_folder:dir"
+  "chirality_current_df:file"
   "qmlux_image:file"
 )
 
