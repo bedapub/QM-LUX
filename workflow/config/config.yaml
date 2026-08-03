@@ -38,6 +38,9 @@ model_github_url: https://github.com/bedapub/QM-LUX/releases/download/v1.0.0
 #model_arv_folder_name:    # leave empty if model files are at collection root
 
 # ── Singularity bind mounts ─────────────────────────────────────────────────
-# Singularity does not auto-mount filesystems outside $HOME.
-# List every top-level path the workflow reads from or writes to.
-singularity_args_param: "--cleanenv --bind /tmp --bind /path/to/workdir"
+# Singularity does not auto-mount filesystems outside $HOME. run.sh derives
+# mounts for the paths named above (input_file, results_directory,
+# model_local_folder, qmlux_image), so list only the ADDITIONAL top-level paths
+# the workflow reads from or writes to. Whatever you list is kept as given.
+# Set QM_LUX_NO_AUTO_BIND=1 to disable the derivation.
+singularity_args_param: "--cleanenv --bind /tmp"
