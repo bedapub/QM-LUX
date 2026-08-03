@@ -159,7 +159,9 @@ def chirality_generator_all(df, col, tryEmbedding=True):
     for index, cmp in df.iterrows():
         print(cmp["SRN"])
         m = Chem.MolFromSmiles(cmp[col])
-        opts = StereoEnumerationOptions(unique=True, onlyUnassigned=True, tryEmbedding=True)
+        opts = StereoEnumerationOptions(
+            unique=True, onlyUnassigned=True, tryEmbedding=tryEmbedding
+        )
         isomers = tuple(EnumerateStereoisomers(m, options=opts))
         chiral_centers = Chem.FindMolChiralCenters(
             m, force=True, includeUnassigned=True, useLegacyImplementation=True

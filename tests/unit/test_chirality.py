@@ -4,6 +4,7 @@
 import pandas as pd
 import pytest
 
+import qm_lux.chirality as chirality_mod
 from qm_lux.chirality import (
     chiral_center_miss_render,
     chirality_analysis,
@@ -245,3 +246,22 @@ class TestChiralityAnalysisAll:
         srn_prefixes = {s.split("_")[0] for s in result["SRN"]}
         assert "mol0" in srn_prefixes
         assert "mol1" in srn_prefixes
+
+    @pytest.mark.parametrize("try_embedding", [True, False])
+    def test_try_embedding_reaches_rdkit(self, monkeypatch, try_embedding):
+        """The tryEmbedding argument must reach StereoEnumerationOptions.
+
+        It was previously declared on both functions but hardcoded to ``True``
+        at the call site, so passing ``False`` did nothing.  Every current
+        caller uses the default, which is why the dead parameter went unseen.
+        """
+        seen = []
+        real_opts = chirality_mod.StereoEnumerationOptions
+
+        def _spy(**kwargs):
+            seen.append(kwargs.get("tryEmbedding"))
+            return real_opts(**kwargs)
+
+        monkeypatch.setattr(chirality_mod, "StereoEnumerationOptions", _spy)
+        chirality_analysis_all(_make_df([_ALANINE_NOSTR]), "SMILES_CLEAN", try_embedding)
+        assert seen == [try_embedding]
