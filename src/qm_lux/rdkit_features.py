@@ -124,8 +124,15 @@ def smi_to_descriptors(smiles):
     Returns
     -------
     numpy.ndarray
-        Array of RDKit 2-D descriptor values, or an empty list if the
-        molecule could not be parsed.
+        Array of RDKit 2-D descriptor values.  An empty list is returned only
+        when salt stripping removes the whole molecule.
+
+    Raises
+    ------
+    Boost.Python.ArgumentError
+        If ``smiles`` cannot be parsed.  ``Chem.MolFromSmiles`` returns
+        ``None`` and the salt remover rejects it, so an unparseable SMILES
+        fails loudly here rather than yielding an empty descriptor row.
     """
     calc = MoleculeDescriptors.MolecularDescriptorCalculator(
         [x[0] for x in Descriptors._descList]
