@@ -26,7 +26,8 @@ def AUC_meas_entire_from250_pred(df_c, seg, integral_method):
     ----------
     df_c : pandas.DataFrame
         UV-Vis data with columns ``SRN``, ``lambda (nm)``,
-        ``Epsilon (mL/cm/mol)``.
+        ``Epsilon (mL/cm/mol)``.  Modified in place — both value columns are
+        converted from strings to numeric dtypes.
     seg : numpy.ndarray
         Segment boundary wavelengths (nm).  700 nm is appended internally as
         the final boundary.
@@ -42,6 +43,9 @@ def AUC_meas_entire_from250_pred(df_c, seg, integral_method):
     ------
     ValueError
         If any segment boundary exceeds the maximum wavelength in ``df_c``.
+    UnboundLocalError
+        If ``integral_method`` is neither ``"trapz"`` nor ``"simps"``.  No
+        integrator is bound and the first integration attempt fails.
     """
     df_c["lambda (nm)"] = pd.to_numeric(df_c["lambda (nm)"], downcast="float")
     df_c["Epsilon (mL/cm/mol)"] = pd.to_numeric(
@@ -67,9 +71,11 @@ def AUC_meas_entire_from250_pred(df_c, seg, integral_method):
 
     if integral_method == "trapz":
         def AUC_integral(y, x):
+            """Integrate ``y`` over ``x`` by the trapezoidal rule."""
             return trapezoid(y, x)
     elif integral_method == "simps":
         def AUC_integral(y, x):
+            """Integrate ``y`` over ``x`` by Simpson's rule."""
             return simpson(y, x=x)
 
     columns = list(df_AUC)
@@ -103,7 +109,8 @@ def AUC_meas_entire_to700_pred(df_c, seg, integral_method):
     ----------
     df_c : pandas.DataFrame
         UV-Vis data with columns ``SRN``, ``lambda (nm)``,
-        ``Epsilon (mL/cm/mol)``.
+        ``Epsilon (mL/cm/mol)``.  Modified in place — both value columns are
+        converted from strings to numeric dtypes.
     seg : numpy.ndarray
         Segment lower-boundary wavelengths (nm).  700 nm is appended internally.
     integral_method : {"trapz", "simps"}
@@ -118,6 +125,9 @@ def AUC_meas_entire_to700_pred(df_c, seg, integral_method):
     ------
     ValueError
         If any segment boundary exceeds the maximum wavelength in ``df_c``.
+    UnboundLocalError
+        If ``integral_method`` is neither ``"trapz"`` nor ``"simps"``.  No
+        integrator is bound and the first integration attempt fails.
     """
     df_c["lambda (nm)"] = pd.to_numeric(df_c["lambda (nm)"], downcast="float")
     df_c["Epsilon (mL/cm/mol)"] = pd.to_numeric(
@@ -143,9 +153,11 @@ def AUC_meas_entire_to700_pred(df_c, seg, integral_method):
 
     if integral_method == "trapz":
         def AUC_integral(y, x):
+            """Integrate ``y`` over ``x`` by the trapezoidal rule."""
             return trapezoid(y, x)
     elif integral_method == "simps":
         def AUC_integral(y, x):
+            """Integrate ``y`` over ``x`` by Simpson's rule."""
             return simpson(y, x=x)
 
     columns = list(df_AUC)
@@ -179,7 +191,8 @@ def AUC_meas_entire_pred(df_c, seg, integral_method):
     ----------
     df_c : pandas.DataFrame
         UV-Vis data with columns ``SRN``, ``lambda (nm)``,
-        ``Epsilon (mL/cm/mol)``.
+        ``Epsilon (mL/cm/mol)``.  Modified in place — both value columns are
+        converted from strings to numeric dtypes.
     seg : numpy.ndarray
         Segment boundary wavelengths (nm).  1000 nm is appended internally.
     integral_method : {"trapz", "simps"}
@@ -194,6 +207,9 @@ def AUC_meas_entire_pred(df_c, seg, integral_method):
     ------
     ValueError
         If any segment boundary exceeds the maximum wavelength in ``df_c``.
+    UnboundLocalError
+        If ``integral_method`` is neither ``"trapz"`` nor ``"simps"``.  No
+        integrator is bound and the first integration attempt fails.
     """
     df_c["lambda (nm)"] = pd.to_numeric(df_c["lambda (nm)"], downcast="float")
     df_c["Epsilon (mL/cm/mol)"] = pd.to_numeric(
@@ -219,9 +235,11 @@ def AUC_meas_entire_pred(df_c, seg, integral_method):
 
     if integral_method == "trapz":
         def AUC_integral(y, x):
+            """Integrate ``y`` over ``x`` by the trapezoidal rule."""
             return trapezoid(y, x)
     elif integral_method == "simps":
         def AUC_integral(y, x):
+            """Integrate ``y`` over ``x`` by Simpson's rule."""
             return simpson(y, x=x)
 
     columns = list(df_AUC)
@@ -248,19 +266,25 @@ def run_AUCs_spectra(df):
     """Compute and merge all AUC descriptor sets from a UV-Vis DataFrame.
 
     Calls the three AUC functions with the wavelength segments used for model
-    training and combines them into a single wide DataFrame with columns
-    ``SRN``, ``100-1000``, ``from250``, and ``to700``.
+    training and merges them on ``SRN``.
 
     Parameters
     ----------
     df : pandas.DataFrame
         UV-Vis data with columns ``SRN``, ``lambda (nm)``,
-        ``Epsilon (mL/cm/mol)``.
+        ``Epsilon (mL/cm/mol)``.  Modified in place — the wavelength and
+        epsilon columns are converted from strings to numeric dtypes.
 
     Returns
     -------
     pandas.DataFrame
-        One row per compound with merged AUC descriptors.
+        One row per compound and 114 columns: ``SRN``, every individual
+        segment column from the three AUC functions, and the three packed
+        list-valued descriptor columns ``100-1000`` (the 90 contiguous
+        100–1000 nm segments), ``from250`` (11 cumulative windows opening at
+        250 nm) and ``to700`` (11 cumulative windows closing at 700 nm).  The
+        packed columns are what the models consume; the individual segment
+        columns are retained alongside them, not dropped.
     """
     seg = np.arange(260, 360, 10)
     UV_pred_AUC_250 = AUC_meas_entire_from250_pred(df, seg, "trapz")

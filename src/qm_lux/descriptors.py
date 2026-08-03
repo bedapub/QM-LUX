@@ -20,22 +20,35 @@ import pandas as pd
 def descr_merge(df, descr_to_merge):
     """Concatenate descriptor arrays from multiple columns into a new column.
 
-    Supports merging two or three descriptor columns.  The new column is named
-    by joining the *other* column names with ``"__"`` (for three-way merges,
-    one merged column is created per left-out descriptor).
+    Supports merging exactly two or three descriptor columns:
+
+    * Two columns — one new column holding their concatenation, named by
+      joining *both* input names with ``"__"``.
+    * Three columns — three new columns, one per left-out descriptor, each
+      named by joining the *other* two names with ``"__"``.
 
     Parameters
     ----------
     df : pandas.DataFrame
         DataFrame containing at least the columns named in ``descr_to_merge``.
+        Modified **in place**: the new columns are added to the caller's
+        DataFrame, which is also the object returned.
     descr_to_merge : list of str
-        Two or three column names whose array values should be concatenated.
+        Exactly two or three column names whose array values should be
+        concatenated.
 
     Returns
     -------
     pandas.DataFrame
-        Input DataFrame with one (two-way) or three (three-way) new columns
-        appended.
+        The same object as ``df``, with one (two-way) or three (three-way)
+        new columns added.
+
+    Raises
+    ------
+    UnboundLocalError
+        If ``descr_to_merge`` has any length other than 2 or 3.  Neither
+        branch runs, and the trailing summary print reads a variable that was
+        never assigned.
     """
     if len(descr_to_merge) == 3:
         for i in descr_to_merge:

@@ -2,8 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """3-D conformer generation and SDF file writing for XTB/CREST pre-optimisation.
 
-The Snakemake workflow calls :func:`generate_conf_xtb` to generate one SDF file
-per compound under ``<folder>/0/<index>/<name>.sdf``.  Conformers are embedded
+The Snakemake workflow calls :func:`generate_conf_xtb` to generate SDF files
+under ``<folder>/0/<index>/``.  Each compound gets two copies of the same
+conformer set — ``<name>.sdf`` (keyed by SRN) and ``<index>.sdf`` (keyed by
+the folder index) — see :func:`write_SDF`.  Conformers are embedded
 with ETKDGv2, force-field-optimised with MMFF94s, sorted by energy, and written
 so that XTB reads the lowest-energy conformer first.
 
@@ -230,7 +232,17 @@ def sdf_run(folder_mol, list_comp, SMILES, all_str, rmsthresh, nconfs, cluster_n
     Returns
     -------
     str
-        Last computed force-field error status (``"OK"`` or ``"ERROR"``).
+        Force-field error status (``"OK"`` or ``"ERROR"``) of the *last*
+        compound that was actually processed — not an aggregate over the run.
+        Per-compound failures are printed, not returned.
+
+    Raises
+    ------
+    UnboundLocalError
+        If no compound is processed to completion — every folder already
+        existed with ``check="NO OVERWRITE"``, or every compound failed
+        conformer embedding (``error_conf``).  The return value is read from
+        a variable that is only assigned inside the success branch.
     """
     folder_mol = os.path.join(folder_mol, str(cluster_number)) + os.sep
     skip = []

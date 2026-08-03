@@ -24,7 +24,9 @@ def validate_crest_best_xyz(file_path):
     -------
     bool
         ``True`` if the file structure and format are correct, ``False``
-        otherwise.
+        otherwise.  A missing file also returns ``False``; other OS-level
+        errors (an unreadable file, a directory in place of the file) are not
+        caught and propagate.
     """
     try:
         with open(file_path, "r") as file:
@@ -79,9 +81,10 @@ def validate_crest_best_xyz(file_path):
 def validate_crest_out(file_path):
     """Validate the header of a ``crest.out`` file.
 
-    Checks that the CREST banner header is present and matches the expected
-    format.  One or more empty lines before the first ``=`` character are
-    allowed.
+    Scans for the first line that is exactly the banner's rule of ``=``
+    characters and checks that the nine banner lines starting there match the
+    expected format.  Any preamble before that line is skipped, not just blank
+    lines, and any content after the banner is ignored.
 
     Parameters
     ----------
@@ -91,7 +94,16 @@ def validate_crest_out(file_path):
     Returns
     -------
     bool
-        ``True`` if the file header is correct, ``False`` otherwise.
+        ``True`` if the file header is correct, ``False`` if the banner is
+        absent, malformed, or the file does not exist.
+
+    Raises
+    ------
+    IndexError
+        If the file ends part-way through the banner — the rule line is found
+        but fewer than nine lines follow it.  Only ``FileNotFoundError`` is
+        handled internally, so a truncated ``crest.out`` propagates rather
+        than returning ``False``.
     """
     expected_header = [
         "       ==============================================\n",

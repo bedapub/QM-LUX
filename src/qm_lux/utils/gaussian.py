@@ -16,7 +16,16 @@ def get_UV_vis_from_gaussian_output(base_dir):
     For each molecule folder under ``<base_dir>/0/``, reads the ``log.out``
     Gaussian output file, sums Gaussian band contributions over a wavelength
     grid of 100–1000 nm (900 points), and writes the result as a
-    ``<molecule>_uvvis.xy`` file alongside the output.
+    ``<folder>_uvvis.xy`` file inside that folder.  The filename comes from the
+    folder name — which the workflow sets to the compound's numeric index, not
+    its SRN.
+
+    Failures are non-fatal and non-signalling: any exception while parsing or
+    writing one molecule is caught, reported as ``"No predicted UV-vis in:"``
+    on stdout, and the loop continues.  A molecule whose log contains no
+    excited states simply gets no ``.xy`` file.  Nothing is returned, so
+    callers cannot distinguish a fully successful run from one where every
+    molecule failed; check for the expected ``.xy`` files instead.
 
     Parameters
     ----------
@@ -60,8 +69,12 @@ def extract_UV_gaussian_output(base_dir):
     """Read all ``.xy`` UV-Vis files under ``base_dir/0/`` and return a DataFrame.
 
     Each ``.xy`` file contains two whitespace-separated columns (wavelength,
-    epsilon). Comment lines starting with ``#`` are dropped.  The result is
-    also written to ``base_dir/UVvis.csv``.
+    epsilon). Rows whose first field starts with ``#`` are dropped after
+    parsing, so a comment line must still split into exactly two fields —
+    ``"#lambda Intensity"`` as written by
+    :func:`get_UV_vis_from_gaussian_output` is fine, a one- or three-word
+    comment raises :exc:`ValueError`.  The result is also written to
+    ``base_dir/UVvis.csv``.
 
     Parameters
     ----------
@@ -72,7 +85,19 @@ def extract_UV_gaussian_output(base_dir):
     Returns
     -------
     pandas.DataFrame
-        Columns: ``lambda (nm)``, ``Epsilon (mL/cm/mol)``, ``SRN``.
+        Columns: ``lambda (nm)``, ``Epsilon (mL/cm/mol)``, ``SRN``.  Both
+        value columns hold **strings**, not floats — the fields are not
+        converted.  ``SRN`` is the ``.xy`` filename with the extension
+        stripped (e.g. ``"3_uvvis"``), not the containing folder name;
+        downstream consumers split it on ``"_"`` to recover the index.
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``base_dir/0/`` does not exist.
+    KeyError
+        If ``base_dir/0/`` exists but contains no ``.xy`` files — the empty
+        result has no ``lambda (nm)`` column to filter on.
     """
     base_dir = os.path.abspath(base_dir)
     directory_uv = os.path.join(base_dir, "0")
@@ -104,6 +129,12 @@ def extract_UV_gaussian_output(base_dir):
 
 def create_input_with_charge(molecule, name, charge, path):
     """Write a Gaussian TD-DFT input file (``.gjf``) for a charged molecule.
+
+    The theory level and resource request are hardcoded, not parameters:
+    B3LYP/6-311+G(d,p) with a water PCM, 30 singlet excited states, 20 GB of
+    memory and 24 shared processors.  The resource lines must match whatever
+    the job scheduler actually allocates for the Gaussian step; edit the
+    constants at the top of the function body to change them.
 
     Parameters
     ----------

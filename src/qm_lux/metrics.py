@@ -85,8 +85,10 @@ def model_performance_ext(ml_model, test_x, test_y):
     Returns
     -------
     tuple
-        Ten-element tuple where the first eight metrics are ``float("nan")``
-        and the last two are ``test_prob`` and ``test_pred``.
+        Ten-element tuple matching the shape of :func:`model_performance`'s
+        return value, so the two can be unpacked identically.  Elements 5 and
+        6 (0-based indices 4 and 5) are ``test_prob`` and ``test_pred``; the
+        remaining eight are ``float("nan")``.
     """
     test_prob = ml_model.predict_proba(test_x)[:, 1]
     test_pred = ml_model.predict(test_x)
@@ -270,7 +272,12 @@ def table_stat_cal(label, attributes, oversampling, validation, scoring, cal_sco
     Returns
     -------
     pandas.DataFrame
-        Single-row DataFrame.
+        Single-row DataFrame.  Note that the column labels do not all mean
+        what they say: this legacy function takes fewer metrics than it has
+        output columns, so ``specificity`` is written to both ``Specificity``
+        and ``Accuracy`` and ``mcc`` is written to ``Precision`` (likewise for
+        the ``_std`` columns).  Prefer :func:`table_stat_cal_std`, which takes
+        every metric explicitly.
     """
     if oversampling == "NO":
         oversampling = "NO Oversampling"

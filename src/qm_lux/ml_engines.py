@@ -28,7 +28,15 @@ def run_prediction(
 
     Loads a pickled model and scaler from ``path_input_model``, applies them to
     the descriptor column in the test pickle, and writes prediction results to
-    a CSV file.
+    a CSV file with columns ``SRN``, ``pred``, ``prob``, ``ML_Method`` and
+    ``Descriptors``.  ``prob`` is the model's confidence in the class it
+    predicted, normalised to ``[0.5, 1.0]`` — *not* the probability of the
+    positive class.
+
+    Every failure mode is a silent early return that writes no CSV: a missing
+    or unreadable pickle, a pickle lacking the ``descriptor`` column, or a
+    missing model/scaler.  The one exception is an empty pickle together with
+    ``srn_file``, which writes a CSV of ``"N/A"`` placeholders.
 
     Parameters
     ----------
@@ -42,7 +50,12 @@ def run_prediction(
         CSV file with SRN identifiers, used as a fallback when ``pkl_file``
         loads an empty DataFrame.
     attribute : str, optional
-        Target column name.  Default ``"SRN"``.
+        Name of a column that must exist in the test pickle.  Default
+        ``"SRN"``.  It is read and handed to
+        :func:`~qm_lux.metrics.model_performance_ext` as ``test_y``, which
+        ignores it — in prediction mode there are no true labels to score
+        against.  The only effect of changing it is which column a missing-key
+        failure is reported on.
     method : str, optional
         ML method label recorded in the output.  Default ``"RF"``.
     descriptor : str, optional
