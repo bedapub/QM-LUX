@@ -1,3 +1,11 @@
+# Declared here so that a cluster run reaches SLURM on its own. Without it this
+# profile sets resources only, and whether jobs are submitted at all depends on a
+# site-wide profile in $SNAKEMAKE_PROFILE -- on a host without one, "cluster mode"
+# silently ran everything locally. Requires snakemake-executor-plugin-slurm.
+# For a different scheduler, copy this directory, change the executor, and point
+# QM_LUX_CLUSTER_PROFILE at the copy.
+executor: slurm
+
 default-resources:
   qos: '15d'
   mem_mb: 10000

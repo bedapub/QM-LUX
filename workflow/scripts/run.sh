@@ -42,9 +42,12 @@ function usage()
   echo "an intermediate rule has no predictions to report on."
   echo ""
   echo "Environment variables:"
-  echo "  QM_LUX_SIF_DIR       directory containing qm-lux.sif (default: repo root)"
-  echo "  QM_LUX_NO_AUTO_BIND  set to 1 to disable deriving Singularity --bind"
-  echo "                       mounts from the paths named in the config file"
+  echo "  QM_LUX_SIF_DIR         directory containing qm-lux.sif (default: repo root)"
+  echo "  QM_LUX_NO_AUTO_BIND    set to 1 to disable deriving Singularity --bind"
+  echo "                         mounts from the paths named in the config file"
+  echo "  QM_LUX_CLUSTER_PROFILE snakemake workflow profile used for a cluster run"
+  echo "                         (default: profiles/slurm). Point this at your own"
+  echo "                         profile directory to run on a non-SLURM scheduler."
   echo ""
 }
 
@@ -391,10 +394,29 @@ snakemake_options="--latency-wait 10 --rerun-incomplete --keep-going "
 snakemake_options="$snakemake_options --printshellcmds "
 
 if $run_local; then
-    snakemake_options="$snakemake_options --cores $cores"
+    # --executor local is explicit on purpose. A site-wide profile (anything in
+    # $SNAKEMAKE_PROFILE, e.g. a cluster module's default) can set "executor:
+    # slurm", and that applies to EVERY snakemake call on the host -- including
+    # this one. Measured: without this flag, `--cores 4` still submitted xtb_conf
+    # to SLURM, so the local/cluster switch below silently did nothing. The
+    # command line wins over a profile, so naming the executor here restores it.
+    snakemake_options="$snakemake_options --cores $cores --executor local"
     echo "Run the pipeline locally with $cores cores"
 else
-    snakemake_options="$snakemake_options --jobs 100 --workflow-profile profiles/slurm"
+    # The cluster profile is overridable so this is not SLURM-only: a site with
+    # LSF/SGE/PBS can point QM_LUX_CLUSTER_PROFILE at a profile of its own that
+    # sets the matching executor. The default ships with the repo and declares
+    # "executor: slurm" itself, so cluster mode does not depend on a site-wide
+    # profile to actually reach a scheduler.
+    cluster_profile="${QM_LUX_CLUSTER_PROFILE:-profiles/slurm}"
+    if [[ ! -f "$cluster_profile/config.yaml" ]]; then
+      echo "Error: cluster profile '$cluster_profile' has no config.yaml." >&2
+      echo "       Set QM_LUX_CLUSTER_PROFILE to a snakemake profile directory," >&2
+      echo "       or pass --cores N to run locally." >&2
+      exit 1
+    fi
+    snakemake_options="$snakemake_options --jobs 100 --workflow-profile $cluster_profile"
+    echo "Submit the pipeline through profile: $cluster_profile"
 
     # --slurm-keep-successful-logs is contributed by snakemake-executor-plugin-slurm,
     # NOT by snakemake core, so it only parses when that plugin is installed. Passing
@@ -404,11 +426,16 @@ else
     # never typed. Add it only when the snakemake being used actually advertises it.
     if snakemake --help 2>/dev/null | grep -q -- '--slurm-keep-successful-logs'; then
         snakemake_options="$snakemake_options --slurm-keep-successful-logs"
-    else
+    elif [[ "$cluster_profile" == "profiles/slurm" ]]; then
+        # The default profile asks for "executor: slurm", which without the plugin
+        # fails at argument parsing ("invalid choice: 'slurm'"). Say so up front --
+        # that error names --executor, a flag the user never typed.
         echo "Warning: this snakemake has no SLURM executor plugin" >&2
-        echo "         (snakemake-executor-plugin-slurm), so --slurm-keep-successful-logs" >&2
-        echo "         is omitted and jobs may not be submitted to SLURM at all." >&2
-        echo "         Install the plugin, or pass --cores N to run locally on purpose." >&2
+        echo "         (snakemake-executor-plugin-slurm), so the default cluster" >&2
+        echo "         profile cannot work and the run will fail with" >&2
+        echo "         \"--executor/-e: invalid choice: 'slurm'\"." >&2
+        echo "         Install the plugin, set QM_LUX_CLUSTER_PROFILE to a profile" >&2
+        echo "         for your scheduler, or pass --cores N to run locally." >&2
     fi
 fi
 
