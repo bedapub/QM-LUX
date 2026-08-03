@@ -17,7 +17,6 @@ benchmarks
 .ipynb_checkpoints
 __pycache__
 !scripts/results.sh
-!scripts/run_tests.sh
 # Inputs for the integration tests in tests/integration/. The blanket *.csv
 # rule above would otherwise leave those tracked scripts shipping without the
 # data they read, which is exactly what happened to input_alt.csv.
