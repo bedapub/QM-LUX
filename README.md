@@ -61,6 +61,7 @@ Results appear in `<results_directory>/summary.csv` and a per-compound HTML repo
   - [Configuration](#configuration)
   - [Running locally (multi-core)](#running-locally-multi-core)
   - [Running on a SLURM cluster](#running-on-a-slurm-cluster)
+    - [Other schedulers](#other-schedulers)
   - [How the run is staged internally](#how-the-run-is-staged-internally)
   - [Workflow DAG](#workflow-dag)
 - [Running with the CLI](#running-with-the-cli)
@@ -256,6 +257,14 @@ Stopping early is a debugging affordance, not part of normal use:
 
 Options may be given in any order. `--cores=8` and `--target=xtb_conf` are also accepted.
 
+Three environment variables adjust behaviour:
+
+| Variable | Effect |
+|---|---|
+| `QM_LUX_SIF_DIR` | Directory containing `qm-lux.sif` (default: repository root) |
+| `QM_LUX_CLUSTER_PROFILE` | Snakemake workflow profile for a cluster run (default: `profiles/slurm`) — see [Other schedulers](#other-schedulers) |
+| `QM_LUX_NO_AUTO_BIND` | Set to `1` to disable deriving Singularity `--bind` mounts from the config — see [Automatic bind mounts](#automatic-bind-mounts) |
+
 The HTML report is generated for a complete run only; a run that stops at an intermediate rule has no predictions to report on, and the report step is skipped.
 
 > **Positional arguments still work.** The older `run.sh <config.yaml> [target] [cores]` form is unchanged, so existing scripts and cluster job files keep working: `./scripts/run.sh config/my_run.yaml xtb_conf 8` is the same as `--target xtb_conf --cores 8`, and a lone number is read as the core count (`./scripts/run.sh config/my_run.yaml 8`). Mixing the two forms for the *same* value is rejected rather than silently resolved.
@@ -354,9 +363,13 @@ QM_LUX_SIF_DIR=/path/to/sif/dir ./scripts/run.sh config/my_run.yaml
 
 Snakemake submits each rule as its own SLURM job, including `gaussian_runner`, so Gaussian must be available on the **compute** nodes rather than on the submit node.
 
+This requires [`snakemake-executor-plugin-slurm`](https://github.com/snakemake/snakemake-executor-plugin-slurm). Without it the run stops immediately with `--executor/-e: invalid choice: 'slurm'`; `run.sh` prints a warning naming the plugin before that happens.
+
 Adapt the per-rule SLURM resources in `workflow/profiles/slurm/config.yaml` to match your cluster:
 
 ```yaml
+executor: slurm     # keep — this is what sends jobs to the scheduler
+
 default-resources:
   qos: '15d'        # replace with your cluster QoS name
   mem_mb: 10000
@@ -369,6 +382,18 @@ set-resources:
     qos: '15d'
     mem_mb: 100000
 ```
+
+#### Other schedulers
+
+The bundled profile targets SLURM, but cluster mode is not limited to it. Install the executor plugin for your scheduler, copy `workflow/profiles/slurm` , change `executor:` to match, and point `QM_LUX_CLUSTER_PROFILE` at the copy:
+
+```bash
+QM_LUX_CLUSTER_PROFILE=/path/to/my/profile ./scripts/run.sh config/my_run.yaml
+```
+
+`run.sh` checks the directory contains a `config.yaml` and exits with an actionable message if not.
+
+> **A site-wide profile does not decide local vs. cluster.** Some clusters ship a Snakemake module that sets `SNAKEMAKE_PROFILE` globally with `executor: slurm` in it, which would otherwise apply to *every* invocation on that host — including one you asked to run locally. `run.sh` passes `--executor local` in local mode so `--cores N` always means what it says.
 
 ### How the run is staged internally
 
@@ -787,6 +812,12 @@ If a path *is* listed as auto-bound yet still appears empty inside the container
 
 **`container creation failed: … mount source … doesn't exist`**
 A `--bind` entry in `singularity_args_param` points at a path that does not exist. Singularity treats this as fatal rather than skipping it. Create the directory or remove the entry; the paths `run.sh` derives are already walked up to an existing ancestor.
+
+**`argument --executor/-e: invalid choice: 'slurm'`**
+Cluster mode needs `snakemake-executor-plugin-slurm`, which is not part of Snakemake core. Install it, or run locally with `--cores N`, or set `QM_LUX_CLUSTER_PROFILE` to a profile for your own scheduler. `run.sh` warns about this before the run starts.
+
+**Jobs go to SLURM even though `--cores N` was given**
+Fixed in current versions — `run.sh` now passes `--executor local`. If you invoke `snakemake` directly rather than through `run.sh`, a site-wide profile in `$SNAKEMAKE_PROFILE` can still impose `executor: slurm` on every call; override it with `--executor local` or `--profile none`.
 
 **`snakemake: command not found` when calling `run.sh`**
 `run.sh` expects `snakemake` in your `PATH`. Activate your conda environment or virtual environment before calling the script.
