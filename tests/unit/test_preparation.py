@@ -148,6 +148,45 @@ class TestDataPreparationStereoYes:
         srn_bases = result["SRN"].str.split("_").str[0]
         assert "mol0" not in srn_bases.values
 
+    def test_suffixed_srns_in_current_df_are_excluded(self, tmp_path):
+        """A real prior run's pickle carries isomer-suffixed SRNs, and those must
+        still exclude the matching raw SRN from the new input.
+
+        Both code paths that write a pickle append a suffix — ``"_0"`` on the
+        stereo_check='YES' path and ``"_0".."_n"`` from chirality_generator_all
+        on the 'NO' path — so ``"mol0_0"``, not ``"mol0"``, is what a genuine
+        current_df contains.  Comparing the raw input SRN against the suffixed
+        one matched nothing and turned the exclusion into a silent no-op.
+        """
+        csv_path = _write_input_csv(tmp_path)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        current_pkl = self._make_current_pkl(tmp_path, ["mol0_0"])
+        result = data_preparation(str(csv_path), str(out_dir), "YES", current_pkl)
+        srn_bases = result["SRN"].str.split("_").str[0]
+        assert "mol0" not in srn_bases.values
+        assert "mol1" in srn_bases.values
+
+    def test_multi_isomer_suffixes_are_excluded(self, tmp_path):
+        """Suffixes beyond ``_0`` (multi-isomer compounds) must also match."""
+        csv_path = _write_input_csv(tmp_path)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        current_pkl = self._make_current_pkl(tmp_path, ["mol0_0", "mol0_1", "mol0_2"])
+        result = data_preparation(str(csv_path), str(out_dir), "YES", current_pkl)
+        srn_bases = result["SRN"].str.split("_").str[0]
+        assert "mol0" not in srn_bases.values
+
+    def test_unrelated_srns_are_not_excluded(self, tmp_path):
+        """Stripping the suffix must not over-match and drop unrelated compounds."""
+        csv_path = _write_input_csv(tmp_path)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        current_pkl = self._make_current_pkl(tmp_path, ["other_0"])
+        result = data_preparation(str(csv_path), str(out_dir), "YES", current_pkl)
+        srn_bases = set(result["SRN"].str.split("_").str[0])
+        assert {"mol0", "mol1"} <= srn_bases
+
     def test_srn_gets_zero_suffix(self, tmp_path):
         """Compounds processed via stereo_check='YES' get a '_0' SRN suffix."""
         csv_path = _write_input_csv(tmp_path)

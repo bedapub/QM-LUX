@@ -58,7 +58,12 @@ def data_preparation(path, folder, stereo_check, current_df=None):
         with open(current_df, "rb") as f:
             df2 = pickle.load(f)
 
-        data = data[~data["SRN"].isin(df2["SRN"])]
+        # Prior-run SRNs carry a per-isomer suffix — "_0" from the line below,
+        # "_0".."_n" from chirality_generator_all — while the incoming SRNs are
+        # raw. Comparing them directly matches nothing, so the exclusion
+        # silently becomes a no-op; strip the suffix before comparing.
+        prior_srns = set(df2["SRN"].astype(str).str.replace(r"_\d+$", "", regex=True))
+        data = data[~data["SRN"].astype(str).isin(prior_srns)]
         data_chir = chirality_analysis(data, "SMILES_CLEAN")
         diast_to_remove = data_chir[data_chir["Chiral Center"] == ">1"]
         print("List of compounds to remove with more than 1 unassigned chiral centers:")
