@@ -194,6 +194,23 @@ if [[ -n "$cores" ]]; then
   fi
 fi
 
+# Resolve the working directory to its physical path before doing anything else.
+#
+# Singularity takes the container's working directory from $PWD (the LOGICAL path,
+# which keeps symlinks), while snakemake computes the --home bind from getcwd()
+# (the PHYSICAL path, with symlinks resolved). If the workflow directory was
+# entered through a symlink the two disagree, and singularity then silently
+# fabricates an empty directory tree at the logical path inside the container --
+# no warning -- so every relative path in every rule resolves into an empty
+# phantom directory. The symptom is a baffling "No such file or directory" for a
+# file that plainly exists on the host.
+#
+# This is the same directory either way, so the change is safe: the Snakefile,
+# config/, the config file argument and the .sif path all still resolve.
+if [[ "$PWD" != "$(pwd -P)" ]]; then
+  cd -P . || exit 1
+fi
+
 # snakemake orchestrates the containers, so it has to be on the HOST -- the image
 # does ship a snakemake env (Dockerfile), but that copy is not what drives this
 # run. A missing host snakemake is an environment problem, not a workflow
@@ -268,6 +285,14 @@ fi
 
 function run_snakemake()
 {
+  # The target is passed WITHOUT a '--' separator, deliberately. Snakemake appends
+  # arguments derived from any active profile AFTER the command line it was given,
+  # and everything following '--' is parsed as a positional target -- so each
+  # profile key turns into a phantom target and the run dies with e.g.
+  # "MissingRuleException: No rule to produce xtb:mem_mb=20000". Since run.sh always
+  # passes --workflow-profile in cluster mode, a '--' here breaks every cluster run.
+  # ('--' IS needed for `snakemake --rulegraph <target>`, where the target would
+  # otherwise be read as --rulegraph's value, but that is a different command.)
   # shellcheck disable=SC2086  # $snakemake_options and $singularity_args_param
   #                              are intentionally word-split into flags.
   snakemake --snakefile $snakemake_file \
@@ -276,7 +301,7 @@ function run_snakemake()
          --use-singularity \
          --singularity-prefix "$QM_LUX_SIF_DIR" \
          --singularity-args "$singularity_args_param" \
-         -- "$1"
+         "$1"
 }
 
 snakemake_exit_code=0
