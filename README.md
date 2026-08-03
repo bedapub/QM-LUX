@@ -293,10 +293,11 @@ model_github_url: https://github.com/bedapub/QM-LUX/releases/download/v1.0.0
 #model_arv_keepweb_url: https://collections.example.com
 #model_arv_folder_name:   # leave empty if model files are at collection root
 
-# Singularity bind mounts — REQUIRED for non-home paths
-# Singularity does not auto-mount filesystems outside $HOME.
-# List every top-level path the workflow reads from or writes to:
-singularity_args_param: "--cleanenv --bind /tmp --bind /path/to/workdir"
+# Singularity bind mounts
+# run.sh derives mounts for the paths named above (input_file, results_directory,
+# model_local_folder, qmlux_image), so you normally only need extra entries here.
+# Anything you do list is kept as given and is never overridden:
+singularity_args_param: "--cleanenv --bind /tmp"
 ```
 
 The input CSV must have two columns (`SRN`, `SMILES`). Example:
@@ -321,6 +322,25 @@ QM_LUX_SIF_DIR=/path/to/sif/dir \
 Gaussian must be on your `PATH` (see [Gaussian setup](#gaussian-setup)); `run.sh` calls it for you.
 
 `run.sh` passes `singularity_args_param` from the config automatically. If `QM_LUX_SIF_DIR` is not set, it defaults to the repository root (two levels above `run.sh`), which is where `singularity pull` places `qm-lux.sif` by default.
+
+#### Automatic bind mounts
+
+A container sees only what is bound into it, so a configured path outside your working directory is invisible to the workflow unless it is mounted. `run.sh` therefore derives bind mounts from the paths the config already names — `input_file`, `results_directory`, `model_local_folder` and `qmlux_image` — and appends them to `singularity_args_param`. It prints what it added:
+
+```
+Auto-bound from config/my_run.yaml: /data/projects/qmlux
+```
+
+Details worth knowing:
+
+- **Your `singularity_args_param` is authoritative.** It is only ever appended to, never rewritten, and a derived path already covered by one of your `--bind` entries (or by the working directory, which Snakemake mounts as the container home) is skipped rather than repeated. Both `--bind a,b` and `--bind=a` are recognised.
+- **File-valued keys contribute their directory**, directory-valued keys contribute themselves. Paths sharing a parent collapse to a single mount.
+- **Paths are resolved before binding**, so a checkout reached through a symlink still mounts correctly.
+- **A path that does not exist yet** — `results_directory` before the first run — is walked up to its nearest existing ancestor. This matters: Singularity treats a missing bind source as fatal (`container creation failed: ... mount source ... doesn't exist`), not as something to skip.
+- **URL-valued keys are ignored** (`model_github_url`, `model_arv_keepweb_url`), as is anything that is not a path.
+- Set `QM_LUX_NO_AUTO_BIND=1` to disable the derivation and rely solely on `singularity_args_param`.
+
+> Some sites mount shared filesystems for every container via `bind path` entries in `singularity.conf`, which hides missing mounts until someone runs the same config elsewhere. The derivation makes a config work regardless of that site configuration. Paths containing spaces are not supported.
 
 ### Running on a SLURM cluster
 
@@ -738,7 +758,7 @@ Snakemake will skip any already-completed rules (including `gaussian_runner`) an
 
 ## Important notes
 
-**Singularity bind mounts**: Singularity only auto-mounts `$HOME`. Directories outside `$HOME` must be listed explicitly in `singularity_args_param`:
+**Singularity bind mounts**: Singularity only auto-mounts `$HOME`. `run.sh` derives mounts for the paths the config names (see [Automatic bind mounts](#automatic-bind-mounts)); any *other* directory the workflow touches must still be listed explicitly:
 
 ```yaml
 singularity_args_param: "--cleanenv --bind /tmp --bind /scratch/myproject --bind /projects/shared"
@@ -757,11 +777,16 @@ singularity_args_param: "--cleanenv --bind /tmp --bind /scratch/myproject --bind
 ## Troubleshooting
 
 **`FileNotFoundError` or directory not accessible inside the container**
-Add the missing path to `singularity_args_param` in your config. Singularity only auto-mounts `$HOME`:
+`run.sh` binds the paths your config names automatically and prints them as `Auto-bound from …`; if the missing directory is not in that line, add it to `singularity_args_param` yourself:
 
 ```yaml
 singularity_args_param: "--cleanenv --bind /tmp --bind /path/to/missing/dir"
 ```
+
+If a path *is* listed as auto-bound yet still appears empty inside the container, check whether you reached the workflow directory through a symlink — `run.sh` resolves this, but a directly invoked `snakemake` does not.
+
+**`container creation failed: … mount source … doesn't exist`**
+A `--bind` entry in `singularity_args_param` points at a path that does not exist. Singularity treats this as fatal rather than skipping it. Create the directory or remove the entry; the paths `run.sh` derives are already walked up to an existing ancestor.
 
 **`snakemake: command not found` when calling `run.sh`**
 `run.sh` expects `snakemake` in your `PATH`. Activate your conda environment or virtual environment before calling the script.

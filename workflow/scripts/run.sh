@@ -42,7 +42,9 @@ function usage()
   echo "an intermediate rule has no predictions to report on."
   echo ""
   echo "Environment variables:"
-  echo "  QM_LUX_SIF_DIR  directory containing qm-lux.sif (default: repo root)"
+  echo "  QM_LUX_SIF_DIR       directory containing qm-lux.sif (default: repo root)"
+  echo "  QM_LUX_NO_AUTO_BIND  set to 1 to disable deriving Singularity --bind"
+  echo "                       mounts from the paths named in the config file"
   echo ""
 }
 
@@ -261,6 +263,118 @@ model_method="$(grep -w -m1 '^model_method:' "$config_file" | awk '{print $2}' |
 model_descriptor="$(grep -w -m1 '^model_descriptor:' "$config_file" | awk '{print $2}' | sed "s/'//g")"
 
 singularity_args_param="$(grep -w -m1 '^singularity_args_param:' "$config_file" | sed "s/singularity_args_param://g" | xargs)"
+
+# ── Derive bind mounts from the paths configured in the config file ─────────
+#
+# A container sees only what is bound into it, so a configured path outside the
+# working directory is invisible unless it is bound. The example config gets away
+# with `--cleanenv --bind /tmp` only because some sites list `bind path =
+# /projects` (or /gpfs, /scratch) in singularity.conf and mount those
+# automatically. That is site configuration this repository does not control: on
+# a default singularity.conf the very same config fails to find
+# model_local_folder and qmlux_image. Deriving the mounts removes that
+# dependency.
+#
+# singularity_args_param stays authoritative -- whatever it lists is kept as
+# given, and a path already covered by it, or by the working directory (which
+# snakemake binds as the container home), is skipped rather than repeated. Set
+# QM_LUX_NO_AUTO_BIND=1 to turn the derivation off.
+#
+# The keys are an allow-list on purpose: model_github_url and
+# model_arv_keepweb_url hold URLs, and model_descriptor is not a path at all, so
+# no "looks like a path" test would be safe. 'file' means bind the containing
+# directory and 'dir' the path itself -- fixed per key rather than decided by
+# stat, because results_directory does not exist yet on a cold run.
+_bind_spec=(
+  "input_file:file"
+  "results_directory:dir"
+  "model_local_folder:dir"
+  "qmlux_image:file"
+)
+
+# Nearest existing ancestor of $1; fails if the walk reaches "/". A bind source
+# that does not exist is FATAL, not skipped -- singularity aborts with
+# "container creation failed: ... mount source ... doesn't exist" -- and
+# results_directory legitimately does not exist before the first run.
+function nearest_existing()
+{
+  local p="$1"
+  while [[ "$p" != "/" && ! -e "$p" ]]; do
+    p="$(dirname "$p")"
+  done
+  [[ "$p" == "/" ]] && return 1
+  printf '%s\n' "$p"
+}
+
+# True when $1 is $2 or lies inside it.
+function covered_by()
+{
+  [[ "$1" == "$2" || "$1" == "$2"/* ]]
+}
+
+if [[ "${QM_LUX_NO_AUTO_BIND:-0}" != "1" ]]; then
+  # What the container can already reach: the working directory, plus everything
+  # the config's own --bind entries cover. Those values may be comma-separated
+  # and may carry :dest[:ro], hence the splitting below.
+  _covered=( "$PWD" )
+  # shellcheck disable=SC2206  # deliberate word-splitting, as everywhere else
+  #                              singularity_args_param is handled.
+  _sap=( $singularity_args_param )
+  _i=0
+  while [[ $_i -lt ${#_sap[@]} ]]; do
+    _val=""
+    case "${_sap[$_i]}" in
+      --bind|-B) _val="${_sap[$((_i + 1))]:-}"; _i=$((_i + 2)) ;;
+      --bind=*)  _val="${_sap[$_i]#--bind=}";   _i=$((_i + 1)) ;;
+      *)                                        _i=$((_i + 1)) ;;
+    esac
+    [[ -z "$_val" ]] && continue
+    IFS=',' read -ra _parts <<< "$_val"
+    for _p in "${_parts[@]}"; do
+      _p="${_p%%:*}"
+      [[ -n "$_p" ]] && _covered+=( "$(realpath -m "$_p" 2>/dev/null || printf '%s' "$_p")" )
+    done
+  done
+
+  _derived=()
+  for _entry in "${_bind_spec[@]}"; do
+    _key="${_entry%%:*}"
+    _kind="${_entry##*:}"
+    _raw="$(grep -w -m1 "^${_key}:" "$config_file" | awk '{print $2}' | sed "s/['\"]//g")"
+    [[ -z "$_raw" ]] && continue
+    [[ "$_raw" == *"://"* ]] && continue   # a URL, not a path
+    [[ "$_kind" == "file" ]] && _raw="$(dirname "$_raw")"
+    # realpath, not the literal string: binding a path that still contains a
+    # symlink reproduces the $PWD problem handled above -- singularity would
+    # fabricate an empty directory inside the container.
+    _abs="$(realpath -m "$_raw" 2>/dev/null)" || continue
+    if ! _abs="$(nearest_existing "$_abs")"; then
+      echo "Warning: not binding '$_key' -- no existing ancestor of '$_raw'." >&2
+      continue
+    fi
+    _derived+=( "$_abs" )
+  done
+
+  # An ancestor sorts before its descendants, so walking the sorted list and
+  # skipping anything already covered keeps the set minimal and avoids
+  # singularity's "destination is already in the mount point list" warning.
+  _added=()
+  while IFS= read -r _abs; do
+    [[ -z "$_abs" ]] && continue
+    _skip=false
+    for _c in "${_covered[@]}"; do
+      if covered_by "$_abs" "$_c"; then _skip=true; break; fi
+    done
+    $_skip && continue
+    _covered+=( "$_abs" )
+    _added+=( "$_abs" )
+    singularity_args_param="$singularity_args_param --bind $_abs"
+  done < <(printf '%s\n' ${_derived[@]+"${_derived[@]}"} | sort -u)
+
+  if [[ ${#_added[@]} -gt 0 ]]; then
+    echo "Auto-bound from $config_file: ${_added[*]}"
+  fi
+fi
 
 snakemake_file=Snakefile
 # Singularity image directory: override with QM_LUX_SIF_DIR env variable if set.
