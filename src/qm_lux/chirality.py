@@ -177,22 +177,14 @@ def chirality_generator_all(df, col, tryEmbedding=True):
     -------
     pandas.DataFrame
         Expanded DataFrame with one row per enumerated isomer; columns
-        ``SRN``, ``SMILES_CLEAN_CHIRAL``, and ``SMILES``.
-
-    Raises
-    ------
-    UnboundLocalError
-        If the *first* compound yields no isomers at all.  Each iteration
-        appends a per-compound frame that is only built inside the
-        ``len(isomers) != 0`` branch, so there is nothing to append yet.
+        ``SRN``, ``SMILES_CLEAN_CHIRAL``, and ``SMILES``.  The index is not
+        reset, so it repeats across compounds.
 
     Notes
     -----
-    A compound that yields no isomers *after* the first is worse than a hard
-    error: the per-compound frame from the previous iteration is still bound,
-    so that compound's rows are appended a second time and the SRN it should
-    have produced is missing.  Zero-isomer compounds are collected for a
-    diagnostic message that is never printed.
+    A compound for which RDKit enumerates no isomers contributes no rows and
+    is named in a message printed at the end.  Callers must therefore treat
+    the SRN set of the result as a subset of the input's, not a match.
     """
     df_final = pd.DataFrame()
     message_list = []
@@ -243,10 +235,17 @@ def chirality_generator_all(df, col, tryEmbedding=True):
                         "SMILES_CLEAN_CHIRAL": smi_chiral,
                         "SMILES": cmp[col],
                     })
+            # Appending inside this branch is load-bearing: df_chiral is only
+            # built where isomers were found. Appending outside it re-appended
+            # the *previous* compound's frame whenever enumeration returned
+            # nothing, duplicating that compound and losing this one.
+            df_final = pd.concat([df_final, df_chiral])
         else:
             message_list.append(cmp["SRN"])
 
-        df_final = pd.concat([df_final, df_chiral])
+    if message_list:
+        print("no stereoisomers could be enumerated, compounds dropped:")
+        print(message_list)
 
     return df_final
 

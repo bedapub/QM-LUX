@@ -331,3 +331,84 @@ class TestChiralityAnalysisAll:
         monkeypatch.setattr(chirality_mod, "StereoEnumerationOptions", _spy)
         chirality_analysis_all(_make_df([_ALANINE_NOSTR]), "SMILES_CLEAN", try_embedding)
         assert seen == [try_embedding]
+
+
+class TestChiralityGeneratorAllZeroIsomers:
+    """A compound RDKit enumerates no isomers for must be dropped, not faked.
+
+    RDKit returns at least one isomer for every molecule these tests could
+    reasonably build, so the empty result is injected by patching
+    ``EnumerateStereoisomers``.  That is the only way to reach the branch, and
+    the branch is worth reaching: before the fix, a zero-isomer compound
+    appended the *previous* compound's rows a second time, so the output
+    silently gained a duplicate and lost a compound.
+    """
+
+    @staticmethod
+    def _patch_empty_for(monkeypatch, empty_indices):
+        """Make the nth call to EnumerateStereoisomers return no isomers.
+
+        ``empty_indices`` holds 0-based call numbers; every other call is
+        delegated to the real RDKit implementation so the rest of the
+        function behaves normally.
+        """
+        real = chirality_mod.EnumerateStereoisomers
+        calls = {"n": 0}
+
+        def _fake(mol, options=None):
+            i = calls["n"]
+            calls["n"] += 1
+            if i in empty_indices:
+                return iter(())
+            return real(mol, options=options)
+
+        monkeypatch.setattr(chirality_mod, "EnumerateStereoisomers", _fake)
+
+    def test_zero_isomer_compound_does_not_duplicate_its_predecessor(self, monkeypatch):
+        """The surviving compound must appear once, not twice."""
+        self._patch_empty_for(monkeypatch, {1})
+        result = chirality_analysis_all(_make_df([_BENZENE, _ALANINE_S]), "SMILES_CLEAN")
+        assert list(result["SRN"]) == ["mol0_0"]
+
+    def test_zero_isomer_compound_is_absent_from_the_output(self, monkeypatch):
+        """The dropped compound must not be represented by another's rows."""
+        self._patch_empty_for(monkeypatch, {1})
+        result = chirality_analysis_all(_make_df([_BENZENE, _ALANINE_S]), "SMILES_CLEAN")
+        assert "mol1" not in {s.split("_")[0] for s in result["SRN"]}
+
+    def test_smiles_column_is_not_attributed_to_the_wrong_compound(self, monkeypatch):
+        """The duplicated row also carried the wrong SMILES; check the values."""
+        self._patch_empty_for(monkeypatch, {1})
+        result = chirality_analysis_all(_make_df([_BENZENE, _ALANINE_S]), "SMILES_CLEAN")
+        assert list(result["SMILES"]) == [_BENZENE]
+
+    def test_zero_isomer_first_compound_does_not_raise(self, monkeypatch):
+        """A zero-isomer compound in first position used to be an UnboundLocalError."""
+        self._patch_empty_for(monkeypatch, {0})
+        result = chirality_analysis_all(_make_df([_BENZENE, _ALANINE_S]), "SMILES_CLEAN")
+        assert list(result["SRN"]) == ["mol1_0"]
+
+    def test_all_compounds_zero_isomers_returns_empty(self, monkeypatch):
+        """No isomers anywhere → an empty frame, not a crash."""
+        self._patch_empty_for(monkeypatch, {0, 1})
+        result = chirality_analysis_all(_make_df([_BENZENE, _ALANINE_S]), "SMILES_CLEAN")
+        assert result.empty
+
+    def test_dropped_srns_are_reported(self, monkeypatch, capsys):
+        """Dropping a compound silently is what made this hard to notice.
+
+        The function prints every SRN as it iterates, so asserting that
+        ``"mol1"`` appears somewhere in stdout would pass even with no
+        reporting at all.  The named SRN must follow the report marker.
+        """
+        self._patch_empty_for(monkeypatch, {1})
+        chirality_analysis_all(_make_df([_BENZENE, _ALANINE_S]), "SMILES_CLEAN")
+        out = capsys.readouterr().out
+        marker = "no stereoisomers could be enumerated, compounds dropped:"
+        assert marker in out
+        assert "mol1" in out.split(marker, 1)[1]
+
+    def test_nothing_is_reported_when_every_compound_succeeds(self, monkeypatch, capsys):
+        """The report must not fire on a clean run."""
+        chirality_analysis_all(_make_df([_BENZENE, _ALANINE_S]), "SMILES_CLEAN")
+        assert "compounds dropped:" not in capsys.readouterr().out
