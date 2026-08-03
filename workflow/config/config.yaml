@@ -11,6 +11,15 @@ gaussian_threads: 24
 # Singularity image (absolute path to the local .sif file)
 qmlux_image: /path/to/qm-lux.sif   # pulled from ghcr.io/bedapub/qm-lux:latest
 
+# ── Stereochemistry (data_preparation -c) ───────────────────────────────────
+# NO  (default) — enumerate all diastereoisomers of unassigned chiral centres.
+# YES (exceptional) — keep the stereo assignment given in the input, drop
+#     compounds with more than one unassigned chiral centre, and skip compounds
+#     already present in chirality_current_df. YES requires that key.
+#     Quote the value — unquoted YAML NO/YES are booleans, not strings.
+chirality_check: "NO"
+#chirality_current_df: /path/to/already_processed.pkl
+
 # ML model parameters
 model_method: RF
 model_descriptor: fp_Morganclean__descriptors_SMILES_CLEAN__100-1000

@@ -284,6 +284,15 @@ gaussian_threads: 24  # CPUs per Gaussian job (host-side)
 
 qmlux_image: /path/to/qm-lux.sif   # absolute path to the local .sif file
 
+# Stereochemistry — NO (default) enumerates all diastereoisomers of unassigned
+# chiral centres. YES is the exceptional case: it keeps the stereo assignment
+# given in the input, drops compounds with more than one unassigned chiral
+# centre, and skips compounds already listed in chirality_current_df (required
+# with YES, ignored with NO).
+# Quote the value — unquoted YAML NO/YES are booleans, not strings.
+chirality_check: "NO"
+#chirality_current_df: /path/to/already_processed.pkl
+
 # ML model — required keys (always set these)
 model_method: RF
 # Feature set identifier — must match the bundled model; do not change unless you retrain
