@@ -343,7 +343,7 @@ Gaussian must be on your `PATH` (see [Gaussian setup](#gaussian-setup)); `run.sh
 
 #### Automatic bind mounts
 
-A container sees only what is bound into it, so a configured path outside your working directory is invisible to the workflow unless it is mounted. `run.sh` therefore derives bind mounts from the paths the config already names — `input_file`, `results_directory`, `model_local_folder` and `qmlux_image` — and appends them to `singularity_args_param`. It prints what it added:
+A container sees only what is bound into it, so a configured path outside your working directory is invisible to the workflow unless it is mounted. `run.sh` therefore derives bind mounts from the paths the config already names — `input_file`, `results_directory`, `model_local_folder`, `chirality_current_df` and `qmlux_image` — and appends them to `singularity_args_param`. It prints what it added:
 
 ```
 Auto-bound from config/my_run.yaml: /data/projects/qmlux
