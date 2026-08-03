@@ -280,7 +280,22 @@ if $run_local; then
     snakemake_options="$snakemake_options --cores $cores"
     echo "Run the pipeline locally with $cores cores"
 else
-    snakemake_options="$snakemake_options --jobs 100 --workflow-profile profiles/slurm --slurm-keep-successful-logs"
+    snakemake_options="$snakemake_options --jobs 100 --workflow-profile profiles/slurm"
+
+    # --slurm-keep-successful-logs is contributed by snakemake-executor-plugin-slurm,
+    # NOT by snakemake core, so it only parses when that plugin is installed. Passing
+    # it unconditionally makes a cluster run abort at argument parsing with
+    # "snakemake: error: unrecognized arguments: --slurm-keep-successful-logs"
+    # on any host whose snakemake lacks the plugin -- an error about a flag the user
+    # never typed. Add it only when the snakemake being used actually advertises it.
+    if snakemake --help 2>/dev/null | grep -q -- '--slurm-keep-successful-logs'; then
+        snakemake_options="$snakemake_options --slurm-keep-successful-logs"
+    else
+        echo "Warning: this snakemake has no SLURM executor plugin" >&2
+        echo "         (snakemake-executor-plugin-slurm), so --slurm-keep-successful-logs" >&2
+        echo "         is omitted and jobs may not be submitted to SLURM at all." >&2
+        echo "         Install the plugin, or pass --cores N to run locally on purpose." >&2
+    fi
 fi
 
 function run_snakemake()
