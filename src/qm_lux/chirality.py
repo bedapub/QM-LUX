@@ -92,12 +92,19 @@ def chiral_center_miss_render(df, list_miss_chiral):
     return df
 
 
-def chirality_generator(df, col):
-    """Enumerate the first stereo isomer for compounds with exactly one chiral centre.
+def chirality_generator(df, col, two_enantiomers=False):
+    """Enumerate stereo isomers for compounds with exactly one chiral centre.
 
     For each compound in ``df`` where ``"Chiral Center"`` is ``"1"``,
-    enumerates possible stereo isomers and replaces the SMILES with the first
-    unique isomer.
+    enumerates possible stereo isomers.  ``two_enantiomers`` selects what is
+    done with them:
+
+    * ``False`` (default, the training path) — keep a single enantiomer and
+      overwrite ``"SMILES_CLEAN"`` in place with the first unique isomer.
+    * ``True`` (the curation path) — keep both enantiomers side by side in new
+      ``"SMILES_CLEAN_0"`` and ``"SMILES_CLEAN_1"`` columns, leaving
+      ``"SMILES_CLEAN"`` untouched.  Compounds yielding fewer than two isomers
+      are skipped and get ``NaN`` in both columns.
 
     Parameters
     ----------
@@ -105,11 +112,16 @@ def chirality_generator(df, col):
         DataFrame with columns ``SRN``, ``col``, and ``"Chiral Center"``.
     col : str
         SMILES column to enumerate from.
+    two_enantiomers : bool, optional
+        Keep both enantiomers in separate columns instead of collapsing to
+        one.  Default ``False``.
 
     Returns
     -------
     pandas.DataFrame
-        Copy of the input with ``"SMILES_CLEAN"`` updated for applicable rows.
+        Copy of the input.  With ``two_enantiomers=False``, ``"SMILES_CLEAN"``
+        is updated for applicable rows; with ``True``, ``"SMILES_CLEAN_0"``
+        and ``"SMILES_CLEAN_1"`` are added.
     """
     df2 = copy.deepcopy(df)
     message_list = []
@@ -120,10 +132,23 @@ def chirality_generator(df, col):
             opts = StereoEnumerationOptions(unique=True, onlyUnassigned=True, tryEmbedding=True)
             isomers = tuple(EnumerateStereoisomers(m, options=opts))
             print(isomers)
-            if len(isomers) != 0:
-                smi = Chem.MolToSmiles(isomers[0])
-                print(smi)
-                df2.at[index, "SMILES_CLEAN"] = smi
+            if not two_enantiomers:
+                if len(isomers) != 0:
+                    smi = Chem.MolToSmiles(isomers[0])
+                    print(smi)
+                    df2.at[index, "SMILES_CLEAN"] = smi
+                else:
+                    message_list.append(cmp["SRN"])
+            # Two enantiomers requires two isomers to put in the two columns;
+            # one isomer is not half an answer here, so the row is skipped
+            # rather than half-filled.
+            elif len(isomers) >= 2:
+                smi1 = Chem.MolToSmiles(isomers[0])
+                smi2 = Chem.MolToSmiles(isomers[1])
+                print(f"Stereoisomer 1: {smi1}")
+                print(f"Stereoisomer 2: {smi2}")
+                df2.at[index, "SMILES_CLEAN_0"] = smi1
+                df2.at[index, "SMILES_CLEAN_1"] = smi2
             else:
                 message_list.append(cmp["SRN"])
 
@@ -211,7 +236,7 @@ def chirality_generator_all(df, col, tryEmbedding=True):
     return df_final
 
 
-def chirality_analysis(df, col):
+def chirality_analysis(df, col, two_enantiomers=False):
     """Assign stereochemistry and flag ambiguous compounds.
 
     Combines :func:`lack_chiral_finder`, :func:`chiral_center_miss_render`,
@@ -224,6 +249,11 @@ def chirality_analysis(df, col):
         Input DataFrame with SMILES in column ``col`` and ``SRN`` identifiers.
     col : str
         SMILES column name.
+    two_enantiomers : bool, optional
+        Passed through to :func:`chirality_generator`.  ``False`` (default)
+        collapses each single-centre compound to one enantiomer in
+        ``"SMILES_CLEAN"``; ``True`` keeps both in ``"SMILES_CLEAN_0"`` and
+        ``"SMILES_CLEAN_1"``.
 
     Returns
     -------
@@ -234,7 +264,7 @@ def chirality_analysis(df, col):
     df2 = copy.deepcopy(df)
     list_remove = lack_chiral_finder(df2, col)
     df2 = chiral_center_miss_render(df2, list_remove)
-    df2 = chirality_generator(df2, col)
+    df2 = chirality_generator(df2, col, two_enantiomers)
     return df2
 
 

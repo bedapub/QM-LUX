@@ -165,6 +165,54 @@ class TestChiralityGenerator:
         result = chirality_generator(df.copy(), "SMILES_CLEAN")
         assert len(result) == 2
 
+    def test_default_adds_no_enantiomer_columns(self):
+        """two_enantiomers defaults to False: no extra columns appear."""
+        df = _make_df([_ALANINE_NOSTR])
+        df["Chiral Center"] = "1"
+        result = chirality_generator(df.copy(), "SMILES_CLEAN")
+        assert "SMILES_CLEAN_0" not in result.columns
+        assert "SMILES_CLEAN_1" not in result.columns
+
+
+class TestChiralityGeneratorTwoEnantiomers:
+    """Tests for two_enantiomers=True — keep both enantiomers side by side."""
+
+    def test_both_enantiomer_columns_added(self):
+        df = _make_df([_ALANINE_NOSTR])
+        df["Chiral Center"] = "1"
+        result = chirality_generator(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
+        assert "SMILES_CLEAN_0" in result.columns
+        assert "SMILES_CLEAN_1" in result.columns
+
+    def test_the_two_enantiomers_differ(self):
+        df = _make_df([_ALANINE_NOSTR])
+        df["Chiral Center"] = "1"
+        result = chirality_generator(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
+        assert result["SMILES_CLEAN_0"].iloc[0] != result["SMILES_CLEAN_1"].iloc[0]
+        assert "@" in result["SMILES_CLEAN_0"].iloc[0]
+        assert "@" in result["SMILES_CLEAN_1"].iloc[0]
+
+    def test_smiles_clean_left_untouched(self):
+        """Unlike the False branch, SMILES_CLEAN must not be overwritten."""
+        df = _make_df([_ALANINE_NOSTR])
+        df["Chiral Center"] = "1"
+        result = chirality_generator(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
+        assert result["SMILES_CLEAN"].iloc[0] == _ALANINE_NOSTR
+
+    def test_rows_without_single_centre_are_nan(self):
+        """Compounds not carrying exactly one centre get no enantiomers."""
+        df = _make_df([_BENZENE, _ALANINE_NOSTR])
+        df["Chiral Center"] = ["", "1"]
+        result = chirality_generator(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
+        assert pd.isna(result["SMILES_CLEAN_0"].iloc[0])
+        assert not pd.isna(result["SMILES_CLEAN_0"].iloc[1])
+
+    def test_row_count_unchanged(self):
+        df = _make_df([_BENZENE, _ALANINE_NOSTR])
+        df["Chiral Center"] = ["", "1"]
+        result = chirality_generator(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
+        assert len(result) == 2
+
 
 # ---------------------------------------------------------------------------
 # chirality_analysis
@@ -196,6 +244,24 @@ class TestChiralityAnalysis:
         original_srn = df["SRN"].tolist()
         chirality_analysis(df.copy(), "SMILES_CLEAN")
         assert df["SRN"].tolist() == original_srn
+
+    def test_two_enantiomers_reaches_the_generator(self):
+        """chirality_analysis must forward two_enantiomers, not swallow it.
+
+        The keyword form is what the curation caller uses, so it is tested as
+        a keyword rather than positionally.
+        """
+        df = _make_df([_ALANINE_NOSTR])
+        result = chirality_analysis(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
+        assert "SMILES_CLEAN_0" in result.columns
+        assert result["SMILES_CLEAN_0"].iloc[0] != result["SMILES_CLEAN_1"].iloc[0]
+
+    def test_default_keeps_one_enantiomer(self):
+        """Omitting the argument keeps the single-enantiomer behaviour."""
+        df = _make_df([_ALANINE_NOSTR])
+        result = chirality_analysis(df.copy(), "SMILES_CLEAN")
+        assert "SMILES_CLEAN_0" not in result.columns
+        assert "@" in result["SMILES_CLEAN"].iloc[0]
 
 
 # ---------------------------------------------------------------------------
