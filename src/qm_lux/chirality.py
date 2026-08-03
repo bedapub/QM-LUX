@@ -178,6 +178,21 @@ def chirality_generator_all(df, col, tryEmbedding=True):
     pandas.DataFrame
         Expanded DataFrame with one row per enumerated isomer; columns
         ``SRN``, ``SMILES_CLEAN_CHIRAL``, and ``SMILES``.
+
+    Raises
+    ------
+    UnboundLocalError
+        If the *first* compound yields no isomers at all.  Each iteration
+        appends a per-compound frame that is only built inside the
+        ``len(isomers) != 0`` branch, so there is nothing to append yet.
+
+    Notes
+    -----
+    A compound that yields no isomers *after* the first is worse than a hard
+    error: the per-compound frame from the previous iteration is still bound,
+    so that compound's rows are appended a second time and the SRN it should
+    have produced is missing.  Zero-isomer compounds are collected for a
+    diagnostic message that is never printed.
     """
     df_final = pd.DataFrame()
     message_list = []
