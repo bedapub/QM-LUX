@@ -723,7 +723,20 @@ docker run --rm -v "$PWD/tests:/app/tests" -w /app \
     ghcr.io/bedapub/qm-lux:1.0.0 python -m pytest tests/unit/ -q
 ```
 
-All 294 tests must pass on a clean checkout.
+All 327 tests must pass on a clean checkout.
+
+### Command-line tests for `run.sh`
+
+`run.sh` is shell, so the Python unit tests do not cover it. This suite drives it
+directly against a stub `snakemake` placed on `PATH`, checking every argument
+path, both run modes, the derived Singularity bind mounts and the environment
+forwarding — without running a single real job. It needs only Bash, `python3`
+and coreutils: no Snakemake, no Singularity, no Gaussian, and it finishes in
+seconds, so it runs in CI on every push.
+
+```bash
+bash tests/cli/test_run_sh.sh
+```
 
 ### Integration test (full workflow)
 
@@ -862,8 +875,11 @@ singularity exec --cleanenv qm-lux.sif python -c \
 
 If the reported metadata path is under your home directory, the image is fine and your environment is leaking in — run with `--cleanenv` (or `--env PYTHONNOUSERSITE=1`), and consider removing the stale install with `pip uninstall qm-lux`. A report of `unknown` means the image predates the in-image `pip install` fix; the code still works, only the version string is unavailable.
 
+**`Error: segmentation violation` after `Normal termination of Gaussian 16`**
+Harmless — the calculation already finished successfully. Some Gaussian 16 builds segfault in thread teardown *after* writing their results, so the trace appears immediately below the `Normal termination` line and shows a libc backtrace (`__clone` → `__libc_free`). Measured on the bundled test input: `g16` still exits `0`, and the excited states and SCF energy are byte-identical to a single-threaded run that produces no such trace. The workflow checks for `Normal termination`, so these runs are correctly treated as successful. It only appears with `gaussian_threads` greater than 1; there is no reason to lower it, as the results are unaffected.
+
 **SLURM jobs fail with memory errors**
-Increase `mem_mb` for the failing rule in `workflow/profiles/slurm/config.yaml`. CREST typically needs 20 GB; Gaussian can require 100 GB or more depending on molecule size.
+Memory is declared by each rule in `workflow/Snakefile`, not in the SLURM profile — the profile deliberately sets only `qos`, because a `mem_mb` under its `set-resources:` would silently override the rule. For Gaussian, raise `gaussian_mem_gb` in your config file: it sets the `%mem` written into the Gaussian input *and* the SLURM reservation together, so the two cannot drift apart. For CREST and XTB (20 GB each by default), edit `resources: mem_mb=` on the rule in the `Snakefile`.
 
 ---
 
