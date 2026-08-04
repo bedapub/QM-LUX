@@ -12,8 +12,12 @@ _repo_src = os.path.abspath(os.path.join(workflow.basedir, "..", "src"))
 shell.prefix(f"set -euo pipefail; export PYTHONPATH={_repo_src}; ")
 
 # Validate configuration
+# crest_threads and gaussian_threads are read unconditionally when the rules
+# below are defined, so a missing key already aborts the parse — listing them
+# here only replaces a bare KeyError with a message that names the file to edit.
 required_config = ["input_file", "results_directory", "qmlux_image",
-                   "model_method", "model_descriptor"]
+                   "model_method", "model_descriptor",
+                   "crest_threads", "gaussian_threads"]
 for param in required_config:
     if param not in config:
         raise ValueError(f"Missing required config parameter: {param}")
@@ -57,6 +61,30 @@ if _chirality_check == "YES" and not _chirality_current_df:
         "the pickle of already-processed compounds (data_preparation -d). "
         "Without it data_preparation has no reference set and fails."
     )
+
+# Gaussian resources.
+#
+# Gaussian reads %mem and %nprocshared from the .gjf header in preference to
+# GAUSS_MDEF/GAUSS_PDEF and to the g16 -m=/-p= flags, so the header — not the
+# scheduler request — decides what the job actually uses. Both numbers are
+# therefore derived from the same two config keys here and passed to
+# gaussian_preparation (which writes the header) and to gaussian_runner (which
+# requests the allocation), so they cannot drift apart.
+_gaussian_threads = int(config["gaussian_threads"])
+_gaussian_mem_gb = int(config.get("gaussian_mem_gb", 20))
+if _gaussian_threads < 1:
+    raise ValueError(
+        f"gaussian_threads must be >= 1, got: {config['gaussian_threads']!r}"
+    )
+if _gaussian_mem_gb < 1:
+    raise ValueError(
+        f"gaussian_mem_gb must be >= 1 (GB), got: {config['gaussian_mem_gb']!r}"
+    )
+
+# The scheduler must reserve more than %mem: Gaussian's resident set is the %mem
+# pool plus the executable, basis-set and per-link overhead. Reserve 25% on top,
+# with a 4 GB floor, so a run that honours its own header is not OOM-killed.
+_gaussian_mem_mb = int(_gaussian_mem_gb * 1024 + max(4096, _gaussian_mem_gb * 1024 * 0.25))
 
 # Constants
 outdir = config["results_directory"]
@@ -315,6 +343,11 @@ rule gaussian_preparation:
         "logs/gaussian_prepartion_{ind1}_{ind2}.log",
     params:
         dir=os.path.join(outdir, "data_ml", "{ind1}", "{ind2}"),
+        # Written into the .gjf header, so these are the resources g16 will
+        # actually use — they describe gaussian_runner's allocation below, not
+        # this rule's own (writing a text file needs 1 core and 1 GB).
+        gaussian_mem_gb=_gaussian_mem_gb,
+        gaussian_nproc=_gaussian_threads,
     threads: 1
     resources:
         mem_mb=1000,
@@ -327,7 +360,8 @@ rule gaussian_preparation:
         if [ "$xyz_result" == "The file structure and format are correct." ]; then
             result="$(python -m qm_lux.cli gaussian_preparation \
                 -i {input.xyz} -c {wildcards.ind1} \
-                -n {wildcards.ind2} -d {params.dir})"
+                -n {wildcards.ind2} -d {params.dir} \
+                -m {params.gaussian_mem_gb} -p {params.gaussian_nproc})"
             mv -f {params.dir}/{wildcards.ind2}_input.gjf {output.gjf}
         else
             touch {output.gjf}
@@ -344,14 +378,17 @@ rule gaussian_runner:
     log:
         "logs/gaussian_runner_{ind1}_{ind2}.log",
     params:
-        mem = "50GB",
+        # %mem from the header, in the GB form g16 expects; passed through so the
+        # script can check the header against the allocation and set GAUSS_MDEF.
+        mem="{}GB".format(_gaussian_mem_gb),
     retries: 3
-    threads: config["gaussian_threads"]
+    threads: _gaussian_threads
     resources:
-        mem_mb=50000,
+        # Larger than params.mem on purpose — see _gaussian_mem_mb above.
+        mem_mb=_gaussian_mem_mb,
     shell:
         """
-        bash scripts/calculate_uvvis.sh {input.gjf} {output.out}
+        bash scripts/calculate_uvvis.sh {input.gjf} {output.out} {threads} {params.mem}
         """
 
 rule uvvis:

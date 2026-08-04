@@ -127,14 +127,17 @@ def extract_UV_gaussian_output(base_dir):
     return df_all
 
 
-def create_input_with_charge(molecule, name, charge, path):
+def create_input_with_charge(molecule, name, charge, path, mem_gb=20, n_processes=24):
     """Write a Gaussian TD-DFT input file (``.gjf``) for a charged molecule.
 
-    The theory level and resource request are hardcoded, not parameters:
-    B3LYP/6-311+G(d,p) with a water PCM, 30 singlet excited states, 20 GB of
-    memory and 24 shared processors.  The resource lines must match whatever
-    the job scheduler actually allocates for the Gaussian step; edit the
-    constants at the top of the function body to change them.
+    The theory level is hardcoded: B3LYP/6-311+G(d,p) with a water PCM and 30
+    singlet excited states.  The resource request is not — Gaussian takes
+    ``%mem`` and ``%nprocshared`` from this header in preference to
+    ``GAUSS_MDEF``/``GAUSS_PDEF`` or the ``g16 -m=``/``-p=`` flags, so the
+    header is what the job actually uses and it must match what the scheduler
+    allocates.  The Snakemake ``gaussian_preparation`` rule passes the values
+    derived from ``gaussian_mem_gb`` and ``gaussian_threads``; the defaults
+    here reproduce the values that used to be hardcoded.
 
     Parameters
     ----------
@@ -146,16 +149,18 @@ def create_input_with_charge(molecule, name, charge, path):
         Formal charge of the molecule.
     path : str
         Directory where the ``.gjf`` file will be written.
+    mem_gb : int, optional
+        Memory for the ``%mem`` line, in GB. Default 20.
+    n_processes : int, optional
+        Shared processors for the ``%nprocshared`` line. Default 24.
     """
-    mem = 20          # GB
     nstates = 30      # number of excited states
-    n_processes = 24  # cores requested
 
     head = (
         "%chk={}_UV.chk\n%mem={}GB\n%nprocshared={}\n"
         "# td=(singlets,nstates={}) b3lyp/gen scrf=(solvent=water)\n\n"
         "{}\n\n{} 1\n"
-    ).format(name, mem, n_processes, nstates, name, charge)
+    ).format(name, mem_gb, n_processes, nstates, name, charge)
 
     positions = ""
     for sp, x, y, z in zip(

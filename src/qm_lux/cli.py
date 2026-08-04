@@ -87,6 +87,13 @@ def main():
     parser_gaussian_prep.add_argument("-n", "--name", required=True, help="Molecule name (used for job title and checkpoint basename)")
     parser_gaussian_prep.add_argument("-c", "--charge", type=int, default=0, help="Formal charge of the molecule. Default 0")
     parser_gaussian_prep.add_argument("-d", "--directory", required=True, help="Output directory for the .gjf file")
+    # These become the %mem and %nprocshared lines of the .gjf, which Gaussian
+    # honours over GAUSS_MDEF/GAUSS_PDEF and over `g16 -m=`/`-p=` — so they must
+    # match what the scheduler allocates to the gaussian_runner rule.
+    parser_gaussian_prep.add_argument("-m", "--mem-gb", type=int, default=20,
+                                      help="Memory for the %%mem line, in GB. Default 20")
+    parser_gaussian_prep.add_argument("-p", "--nproc", type=int, default=24,
+                                      help="Shared processors for the %%nprocshared line. Default 24")
 
     # validate — check CREST/XTB output file format
     parser_validate = subparsers.add_parser(
@@ -173,7 +180,8 @@ def main():
             print(f"Error: The input file '{args.infile}' is empty.")
         else:
             molecule = ase_read(args.infile)
-            create_input_with_charge(molecule, args.name, args.charge, args.directory)
+            create_input_with_charge(molecule, args.name, args.charge, args.directory,
+                                     mem_gb=args.mem_gb, n_processes=args.nproc)
 
     elif args.function == 'validate':
         if args.file_type == "crest_best.xyz":
