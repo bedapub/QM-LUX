@@ -6,6 +6,19 @@
 # QM_LUX_CLUSTER_PROFILE at the copy.
 executor: slurm
 
+# Throttle submission and status polling. run.sh passes --profile none on the
+# cluster path (see the comment there), so any rate limits a site-wide profile
+# would have supplied have to be set here instead. They matter: --jobs 100 means
+# a burst of up to 100 sbatch calls plus their status checks, and slurmctld is a
+# shared service. Snakemake's defaults are 100 submissions/s and 10 status
+# checks/s, so the status-check rate in particular is a 10x reduction.
+# max-jobs-per-second is deprecated in snakemake 9.16 in favour of
+# max-jobs-per-timespan ("30/1s"), but is still honoured -- it is converted to
+# the new form in settings/types.py __post_init__. Kept in the old spelling
+# because it parses on every 9.x, which the newer key does not.
+max-jobs-per-second: 30
+max-status-checks-per-second: 1
+
 default-resources:
   qos: '15d'
   # Floor for rules that declare no mem_mb of their own. Rules that do declare

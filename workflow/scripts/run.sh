@@ -416,6 +416,23 @@ else
       echo "       or pass --cores N to run locally." >&2
       exit 1
     fi
+    # --profile none disables the site-wide profile named by $SNAKEMAKE_PROFILE
+    # for this call only. A site profile that sets the executor setting
+    # "slurm-qos" silently caps every job's wall time: the SLURM executor plugin
+    # appends that value to the sbatch call AFTER the --qos produced by this
+    # workflow profile's per-rule "qos" resource. Both flags survive and sbatch
+    # honours the LAST one, so a rule asking for a 15-day QoS is submitted as
+    # "--qos=15d ... --qos=1d" and is killed at 24 h.
+    #
+    # This is not a snakemake precedence bug -- a workflow profile does override
+    # a site profile on a shared key. The two never collide because they set
+    # different keys that happen to yield the same sbatch flag: "qos" is a
+    # RESOURCE, "slurm-qos" a top-level EXECUTOR SETTING on a separate code path.
+    # Setting "slurm-qos" here would beat it, but that is a single global value
+    # and would flatten the per-rule QoS tiering in profiles/slurm to one number.
+    # Dropping the site profile keeps the tiering; the scheduler rate limits such
+    # a profile typically carries are set in the cluster profile instead.
+    snakemake_options="$snakemake_options --profile none"
     snakemake_options="$snakemake_options --jobs 100 --workflow-profile $cluster_profile"
     echo "Submit the pipeline through profile: $cluster_profile"
 
