@@ -62,7 +62,7 @@ Results appear in `<results_directory>/summary.csv` and a per-compound HTML repo
   - [Running locally (multi-core)](#running-locally-multi-core)
   - [Running on a SLURM cluster](#running-on-a-slurm-cluster)
     - [Other schedulers](#other-schedulers)
-  - [How the run is staged internally](#how-the-run-is-staged-internally)
+  - [How the DAG is built](#how-the-dag-is-built)
   - [Workflow DAG](#workflow-dag)
 - [Running with the CLI](#running-with-the-cli)
 - [Python API](#python-api)
@@ -405,61 +405,53 @@ QM_LUX_CLUSTER_PROFILE=/path/to/my/profile ./scripts/run.sh config/my_run.yaml
 
 > **A site-wide profile does not decide local vs. cluster.** Some clusters ship a Snakemake module that sets `SNAKEMAKE_PROFILE` globally with `executor: slurm` in it, which would otherwise apply to *every* invocation on that host — including one you asked to run locally. `run.sh` passes `--executor local` in local mode so `--cores N` always means what it says.
 
-### How the run is staged internally
+### How the DAG is built
 
-**You do not need this section to use QM-LUX** — one `run.sh` call runs everything. It documents an implementation detail you will notice in the log output, and which matters if you invoke `snakemake` directly instead of through `run.sh`.
-
-`run.sh` makes **two** Snakemake invocations back to back:
+**You do not need this section to use QM-LUX** — one `run.sh` call makes one Snakemake invocation that runs everything. It documents an implementation detail that matters only if you invoke `snakemake` directly instead of through `run.sh`, or if you edit the Snakefile.
 
 ```
-Stage 1:  preparation → xtb_conf
-
-Stage 2:  crest → xtb → gaussian_preparation → gaussian_runner → uvvis
-                                                                    ↓
-          model → prediction → get_results → summarize_results → report_tables
+preparation → xtb_conf ⇢ crest → … per-molecule rules … → uvvis → … → all
+                        ↑
+                 the checkpoint
 ```
 
-**Gaussian is not a manual step.** `gaussian_runner` is an ordinary rule, scheduled by Snakemake inside stage 2 like any other. What is special about it is only that it has **no** `container:` directive — Gaussian is commercial and cannot be bundled in the open-source image, so the rule executes against your own licensed installation on the host. That is a packaging constraint, not a reason for the split.
+(`⇢` is the checkpoint boundary; the [Workflow DAG](#workflow-dag) below has the complete graph.)
 
-**Why two invocations.** `rule uvvis` derives its inputs by listing the per-molecule directories under `<results_directory>/data_ml/0/`:
+**Gaussian is not a manual step.** `gaussian_runner` is an ordinary rule, scheduled by Snakemake like any other. What is special about it is only that it has **no** `container:` directive — Gaussian is commercial and cannot be bundled in the open-source image, so the rule executes against your own licensed installation on the host. That is a packaging constraint, nothing more.
+
+**Why `xtb_conf` is a checkpoint** — the `⇢` above. `rule uvvis` does not name its inputs; it discovers them by listing the per-molecule directories under `<results_directory>/data_ml/0/`, which `xtb_conf` creates, one per molecule:
 
 ```python
-subdir=list_directories(os.path.join(outdir, "data_ml", "0"))
+checkpoints.xtb_conf.get(**wildcards)          # wait for xtb_conf, then re-plan
+return list_directories(os.path.join(outdir, "data_ml", "0"))
 ```
 
-Snakemake evaluates that while **building the DAG**, before any rule has run. On a cold run those directories do not exist yet — `preparation` creates them — so the listing returns nothing. A single invocation would then plan a DAG with `crest`, `xtb`, `gaussian_preparation` and `gaussian_runner` **missing entirely** and `uvvis` holding no inputs, and would fail at `uvvis`. Running stage 1 to completion puts the directories on disk; because stage 2 is a separate **process**, it re-evaluates the listing and builds the complete DAG.
+Snakemake normally evaluates a rule's inputs while **building the DAG**, before anything has run. On a cold run those directories do not exist yet, so the listing would return nothing and the DAG would come out with `crest`, `xtb`, `gaussian_preparation` and `gaussian_runner` **missing entirely** and `uvvis` holding no inputs — failing at `uvvis`.
 
-This is why `run.sh` treats `all` as "run both stages" rather than passing it straight through — a bare `snakemake all` on a cold directory hits exactly the truncated DAG described above.
+Declaring `xtb_conf` a [checkpoint](https://snakemake.readthedocs.io/en/stable/snakefiles/rules.html#data-dependent-conditional-execution) is what fixes this: Snakemake pauses after it completes and **re-plans the rest of the DAG** against the directories that now exist. That is why the listing lives in an input function rather than inline in the rule body.
 
-> Converting `preparation` to a Snakemake [checkpoint](https://snakemake.readthedocs.io/en/stable/snakefiles/rules.html#data-dependent-conditional-execution) would let Snakemake re-evaluate the DAG mid-run and collapse this into a single invocation. Not implemented yet; it would not change how `run.sh` is called.
+> **Do not downgrade `xtb_conf` to a plain `rule`.** Earlier versions did, and `run.sh` had to compensate by making *two* Snakemake invocations back to back — the second process re-read the directory listing that the first had populated. Reverting the keyword silently reintroduces the truncated DAG.
+
+**`data_ml/` is a `params`, not an `output`.** `rule preparation` creates `<results_directory>/data_ml/` and declares the two files it writes there (`xtb_input.pkl`, `input.csv`) as outputs — but not the directory itself. It must not: that directory is also where every later per-molecule rule writes, so declaring `directory(data_ml)` would make `preparation` the declared owner of `crest`'s temporary `crest/` directory and `uvvis`'s `UV_plots/` as well, and Snakemake rejects such a DAG with `ChildIOException`. Under the old two-invocation split `preparation` and `uvvis` never appeared in the same DAG, so the clash never surfaced; with a single invocation it does. Nothing changes on disk — the directory is still created and its real products are still tracked.
 
 ### Workflow DAG
 
-The two internal stages (see [How the run is staged internally](#how-the-run-is-staged-internally))
-produce two separate rule graphs. Stage 1 stops after `xtb_conf`, which writes the
-per-molecule SDF files; stage 2 picks those files up as its starting point, which is
-why `crest` appears as a root node rather than as a child of `preparation`.
+![Rule graph: preparation and xtb_conf, then a dashed checkpoint edge to crest, which branches into xtb and gaussian_preparation, through gaussian_runner into uvvis, joined by model into prediction, get_results, summarize_results and report_tables, ending at all](docs/dag.png)
 
-**Stage 1** — target `xtb_conf`:
+The dashed edge is the `xtb_conf` checkpoint (see [How the DAG is built](#how-the-dag-is-built)). It is drawn differently because it is not an ordinary file dependency: `xtb_conf` writes the per-molecule `.sdf` files that `crest` consumes but does not declare them as outputs, so the link only comes into existence when Snakemake re-plans the DAG after the checkpoint completes.
 
-![Stage 1 rule graph: preparation followed by xtb_conf](docs/dag_phase1.png)
-
-**Stage 2** — target `all`:
-
-![Stage 2 rule graph: crest branching into gaussian_preparation and xtb, through uvvis, model, prediction, get_results, summarize_results and report_tables to all](docs/dag_phase2.png)
-
-Regenerate the graphs from `workflow/` (requires Graphviz for `dot`):
+That is also why `snakemake --rulegraph` cannot draw this graph in one piece. `--rulegraph` is static — it plans without executing, so it cannot expand the checkpoint, and it shows either the pre-checkpoint half or the post-checkpoint half depending on what is already on disk:
 
 ```bash
 cd workflow
-# Stage 1
-snakemake --rulegraph -- xtb_conf | dot -Tpng -Grankdir=LR > ../docs/dag_phase1.png
-# Stage 2 — run after stage 1 has produced the SDF files
-snakemake --rulegraph | dot -Tpng -Grankdir=LR > ../docs/dag_phase2.png
+# cold directory -> preparation, xtb_conf, and the post-uvvis tail
+snakemake --rulegraph | dot -Tpng -Grankdir=LR > /tmp/dag_pre.png
+# directory where xtb_conf has completed but the per-molecule rules have not
+# -> crest, xtb, gaussian_preparation, gaussian_runner, uvvis and the tail
+snakemake --rulegraph | dot -Tpng -Grankdir=LR > /tmp/dag_post.png
 ```
 
-> The `--` before the target name is required: without it Snakemake 9 reads `xtb_conf`
-> as the graph output format.
+`docs/dag.png` is the union of the two, with the checkpoint edge added.
 
 | Rule | Container | Description |
 |---|:---:|---|
