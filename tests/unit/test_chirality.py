@@ -213,6 +213,51 @@ class TestChiralityGeneratorTwoEnantiomers:
         result = chirality_generator(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
         assert len(result) == 2
 
+    def test_unfilled_rows_are_a_real_nan_not_the_string(self):
+        """Regression: the skipped rows must hold NaN, never a "nan" string.
+
+        The enantiomer columns used to be created implicitly by the first
+        ``.at`` write inside the loop, which on pandas < 2.2 produced a
+        fixed-width numpy string array whose unwritten rows held ``str(nan)``
+        truncated to that width. Those are ordinary strings, so ``pd.isna`` was
+        False and a caller's ``dropna`` kept rows carrying no isomer at all.
+        Assert the value is not string-like rather than only that ``isna`` holds,
+        so a future regression to any truncation of "nan" is caught too.
+        """
+        df = _make_df([_BENZENE, _ALANINE_NOSTR])
+        df["Chiral Center"] = ["", "1"]
+        result = chirality_generator(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
+        for column in ("SMILES_CLEAN_0", "SMILES_CLEAN_1"):
+            skipped = result[column].iloc[0]
+            assert not isinstance(skipped, str), f"{column} holds the string {skipped!r}"
+            assert pd.isna(skipped)
+
+    def test_dropna_removes_exactly_the_skipped_rows(self):
+        """The downstream consequence: dropna must drop the isomer-less rows."""
+        df = _make_df([_BENZENE, _ALANINE_NOSTR])
+        df["Chiral Center"] = ["", "1"]
+        result = chirality_generator(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
+        kept = result.dropna(subset=["SMILES_CLEAN_0"])
+        assert len(kept) == 1
+        assert kept["SMILES_CLEAN"].iloc[0] == _ALANINE_NOSTR
+
+    def test_centre_yielding_too_few_isomers_is_also_nan(self):
+        """The other skip path: flagged as one centre, but <2 isomers enumerated.
+
+        ``test_rows_without_single_centre_are_nan`` only covers rows filtered out
+        by ``Chiral Center``; this covers a row that reaches the enumeration and
+        is skipped by the ``len(isomers) >= 2`` guard, which is the branch that
+        leaves the column untouched for an *already created* column.
+        """
+        # Benzene has no chiral centre, so enumeration yields fewer than two
+        # isomers even though the column claims one centre.
+        df = _make_df([_BENZENE])
+        df["Chiral Center"] = "1"
+        result = chirality_generator(df.copy(), "SMILES_CLEAN", two_enantiomers=True)
+        assert not isinstance(result["SMILES_CLEAN_0"].iloc[0], str)
+        assert pd.isna(result["SMILES_CLEAN_0"].iloc[0])
+        assert pd.isna(result["SMILES_CLEAN_1"].iloc[0])
+
 
 # ---------------------------------------------------------------------------
 # chirality_analysis

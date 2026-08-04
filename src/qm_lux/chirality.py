@@ -124,6 +124,22 @@ def chirality_generator(df, col, two_enantiomers=False):
         and ``"SMILES_CLEAN_1"`` are added.
     """
     df2 = copy.deepcopy(df)
+    if two_enantiomers:
+        # Create both columns up front, object-dtype and NaN-filled.
+        #
+        # Only *some* rows get a value in the loop below, so letting .at create
+        # the column implicitly makes pandas infer it from the first value
+        # written. On pandas < 2.2 that produces a fixed-width numpy string
+        # array whose unwritten rows hold str(nan) TRUNCATED to that width --
+        # "nan" for a full SMILES, but "n" or "na" for a shorter one. Those are
+        # ordinary strings, so pd.isna() is False and dropna() keeps rows that
+        # carry no isomer at all, which a caller then tries to parse as SMILES.
+        # pandas >= 2.2 stores a real NaN here, so the behaviour silently
+        # depended on the installed version; assigning the columns explicitly
+        # pins it for every version.
+        nan_column = [float("nan")] * len(df2)
+        df2["SMILES_CLEAN_0"] = pd.Series(nan_column, index=df2.index, dtype=object)
+        df2["SMILES_CLEAN_1"] = pd.Series(nan_column, index=df2.index, dtype=object)
     message_list = []
     for index, cmp in df.iterrows():
         if cmp["Chiral Center"] == "1":
