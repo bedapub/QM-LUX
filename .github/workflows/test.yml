@@ -26,6 +26,17 @@ jobs:
       - name: Run unit tests
         run: poetry run pytest tests/unit/ --tb=short -q
 
+      - name: Check shell script syntax
+        run: |
+          find . -name '*.sh' -not -path './.git/*' -print0 \
+            | xargs -0 -n1 bash -n
+
+      # Drives run.sh against a stub snakemake -- no Snakemake, Singularity or
+      # Gaussian needed, so it belongs in CI rather than the cluster-only
+      # integration tests.
+      - name: Run run.sh CLI tests
+        run: bash tests/cli/test_run_sh.sh
+
   build:
     runs-on: ubuntu-latest
 
