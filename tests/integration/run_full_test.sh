@@ -99,19 +99,11 @@ echo ""
 # ---------- run snakemake ----------
 cd "$SMK_DIR"
 
-echo "--- Phase 1: preparation and xtb configuration ---"
-snakemake --snakefile Snakefile \
-    --configfile "$CONFIG_FILE" \
-    --use-singularity \
-    --singularity-prefix "$SIF_DIR" \
-    --singularity-args "--cleanenv --bind /tmp --bind ${BIND_MOUNTS}" \
-    --cores "$CORES" \
-    --latency-wait 30 \
-    --rerun-incomplete \
-    xtb_conf
-
-echo ""
-echo "--- Phase 2: Gaussian, prediction, results ---"
+# One invocation covers the whole pipeline: 'checkpoint xtb_conf' in the
+# Snakefile makes snakemake re-plan the DAG once the per-molecule directories
+# exist, so the per-molecule rules and uvvis are no longer invisible on a cold
+# run. This used to be two calls, xtb_conf then all.
+echo "--- Running the full workflow ---"
 snakemake --snakefile Snakefile \
     --configfile "$CONFIG_FILE" \
     --use-singularity \

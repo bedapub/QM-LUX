@@ -212,11 +212,20 @@ rule preparation:
         out=os.path.join(outdir, "preparation.out"),
         pkl=os.path.join(outdir, "data_ml/xtb_input.pkl"),
         srn=os.path.join(outdir, "data_ml/input.csv"),
-        dir=directory(os.path.join(outdir, "data_ml")),
     localrule: True
     log:
         "logs/preparation.log",
     params:
+        # data_ml is a params, NOT an output. It is the directory every later
+        # per-molecule rule writes into -- crest's temp crest/ dir, uvvis's
+        # UV_plots/ -- so declaring directory(data_ml) here makes this rule the
+        # declared owner of their outputs too, and snakemake rejects the DAG with
+        # ChildIOException as soon as preparation and those rules appear in it
+        # together. (Under the old two-invocation split they never did, which is
+        # why the clash stayed hidden.) The pkl and srn outputs above already
+        # live inside data_ml, so snakemake still creates it and still tracks
+        # this rule's real products; nothing changes on disk.
+        dir=os.path.join(outdir, "data_ml"),
         chirality_check=_chirality_check,
         # Expands to "" for the default NO path, so the flag is simply absent.
         current_df=(
@@ -229,24 +238,43 @@ rule preparation:
     shell:
         """
         python -m qm_lux.cli data_preparation -c {params.chirality_check} {params.current_df} \
-            -i {input.file} -o {output.dir} > {output.out}
+            -i {input.file} -o {params.dir} > {output.out}
         """
 
 
-rule xtb_conf:
+# A checkpoint, not a plain rule, and that one keyword is load-bearing.
+#
+# This is the step that creates the per-molecule directories
+# <outdir>/data_ml/0/<n>/ (qm_lux.xtb.generate_conf_xtb). Everything downstream
+# of it is per-molecule, and rule uvvis has to gather ALL of those molecules --
+# but their names are only knowable by looking at the filesystem after this rule
+# has run. Declaring it a checkpoint tells snakemake to stop after it completes
+# and re-plan the rest of the DAG; see uvvis_gaussian_input below for the other
+# half. As a plain rule the listing runs before this rule does, returns nothing,
+# and the whole per-molecule branch silently vanishes from the DAG.
+#
+# Nothing else about the rule changes: a checkpoint is an ordinary rule with an
+# ordinary output, so xtb_conf.out and the profile's set-resources entry for
+# this rule name both behave exactly as before.
+checkpoint xtb_conf:
     input:
-        dir=rules.preparation.output.dir,
         pkl=rules.preparation.output.pkl,
+        srn=rules.preparation.output.srn,
     output:
         out=os.path.join(outdir, "xtb_conf.out"),
     localrule: False
     log:
         "logs/xtb_conf.log",
+    params:
+        # See the note in rule preparation: data_ml is no longer a declared
+        # output there, so depend on the files inside it instead. Ordering is
+        # unchanged -- those files are what this rule actually reads.
+        dir=os.path.join(outdir, "data_ml"),
     container:
         config["qmlux_image"]
     shell:
         """
-         python -m qm_lux.cli xtb_conf -i {input.dir} > {output.out} || touch {output.out}
+         python -m qm_lux.cli xtb_conf -i {params.dir} > {output.out} || touch {output.out}
          """
          
 
@@ -391,18 +419,55 @@ rule gaussian_runner:
         bash scripts/calculate_uvvis.sh {input.gjf} {output.out} {threads} {params.mem}
         """
 
+def _molecule_subdirs(wildcards):
+    """Per-molecule subdirectory names under ``data_ml/0``, after ``xtb_conf``.
+
+    The ``checkpoints`` call is the point of this function. It makes snakemake
+    pause DAG construction until the ``xtb_conf`` checkpoint has completed, so
+    the listing below runs against a directory tree that exists. Written inline
+    in the rule body -- as a plain ``expand(..., list_directories(...))`` -- the
+    same listing is evaluated while the DAG is first built, before ``xtb_conf``
+    has run, and returns an empty list. That is what used to force the workflow
+    to be invoked twice, once per phase, and is why these are functions.
+
+    Parameters
+    ----------
+    wildcards : snakemake.io.Wildcards
+        Wildcards of the requesting job. ``uvvis`` has none, but the argument is
+        part of the input-function contract and is forwarded to ``.get()``.
+
+    Returns
+    -------
+    list of str
+        Names of the per-molecule directories; empty if ``xtb_conf`` produced
+        none, which leaves ``uvvis`` with no inputs rather than failing the DAG.
+    """
+    checkpoints.xtb_conf.get(**wildcards)
+    return list_directories(os.path.join(outdir, "data_ml", "0"))
+
+
+def uvvis_gaussian_input(wildcards):
+    """Gaussian ``log.out`` for every molecule. See :func:`_molecule_subdirs`."""
+    return expand(
+        os.path.join(outdir, "data_ml", "{ind1}", "{subdir}", "log.out"),
+        ind1=0,
+        subdir=_molecule_subdirs(wildcards),
+    )
+
+
+def uvvis_xtb_input(wildcards):
+    """XTB ``<n>.out`` for every molecule. See :func:`_molecule_subdirs`."""
+    return expand(
+        os.path.join(outdir, "data_ml", "{ind1}", "{subdir}", "{subdir}.out"),
+        ind1=0,
+        subdir=_molecule_subdirs(wildcards),
+    )
+
+
 rule uvvis:
     input:
-        gaussian=expand(
-            os.path.join(outdir, "data_ml", "{ind1}", "{subdir}", "log.out"), 
-            ind1=0,
-            subdir=list_directories(os.path.join(outdir, "data_ml", "0")),
-        ),
-        xtb=expand(
-            os.path.join(outdir, "data_ml", "{ind1}", "{subdir}", "{subdir}.out"), 
-            ind1=0,
-            subdir=list_directories(os.path.join(outdir, "data_ml", "0")),
-        ),
+        gaussian=uvvis_gaussian_input,
+        xtb=uvvis_xtb_input,
     output:
         pkl=os.path.join(outdir, "data_ml", "test_set_with_fP_rdkit_prop_UVvis.pkl"),
         dir=directory(os.path.join(outdir, "data_ml", "UV_plots")),
