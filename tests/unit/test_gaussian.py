@@ -5,7 +5,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from ase import Atoms
+
 from qm_lux.utils.gaussian import (
+    create_input_with_charge,
     extract_UV_gaussian_output,
     get_UV_vis_from_gaussian_output,
     parse_output,
@@ -242,3 +245,75 @@ class TestGetUVVisFromGaussianOutput:
         )
         get_UV_vis_from_gaussian_output(str(tmp_path))
         assert not (mol_dir / "mol_empty_uvvis.xy").exists()
+
+
+# ---------------------------------------------------------------------------
+# create_input_with_charge
+# ---------------------------------------------------------------------------
+
+class TestCreateInputWithCharge:
+    """The %mem / %nprocshared header lines decide what Gaussian actually uses —
+    they override GAUSS_MDEF/GAUSS_PDEF and the g16 -m=/-p= flags — so they must
+    follow the values the workflow passes in, not a hardcoded constant."""
+
+    @pytest.fixture
+    def molecule(self):
+        return Atoms("H2", positions=[(0.0, 0.0, 0.0), (0.0, 0.0, 0.74)])
+
+    def _write(self, molecule, tmp_path, **kwargs):
+        create_input_with_charge(molecule, "mol1", 0, str(tmp_path), **kwargs)
+        return (tmp_path / "mol1_input.gjf").read_text()
+
+    def test_file_written_with_expected_name(self, molecule, tmp_path):
+        create_input_with_charge(molecule, "mol1", 0, str(tmp_path))
+        assert (tmp_path / "mol1_input.gjf").exists()
+
+    def test_default_resources_unchanged(self, molecule, tmp_path):
+        """Defaults must reproduce the values that used to be hardcoded."""
+        text = self._write(molecule, tmp_path)
+        assert "%mem=20GB" in text
+        assert "%nprocshared=24" in text
+
+    def test_mem_gb_honoured(self, molecule, tmp_path):
+        text = self._write(molecule, tmp_path, mem_gb=50)
+        assert "%mem=50GB" in text
+        assert "%mem=20GB" not in text
+
+    def test_n_processes_honoured(self, molecule, tmp_path):
+        text = self._write(molecule, tmp_path, n_processes=4)
+        assert "%nprocshared=4" in text
+        assert "%nprocshared=24" not in text
+
+    def test_both_honoured_together(self, molecule, tmp_path):
+        text = self._write(molecule, tmp_path, mem_gb=8, n_processes=2)
+        assert "%mem=8GB" in text
+        assert "%nprocshared=2" in text
+
+    def test_theory_level_not_parameterised(self, molecule, tmp_path):
+        """Only the resource lines are configurable; the method must not move."""
+        text = self._write(molecule, tmp_path, mem_gb=8, n_processes=2)
+        assert "td=(singlets,nstates=30)" in text
+        assert "b3lyp/gen scrf=(solvent=water)" in text
+        assert "6-311+G(d,p)" in text
+
+    def test_charge_and_name_in_header(self, molecule, tmp_path):
+        text = self._write(molecule, tmp_path)
+        assert "%chk=mol1_UV.chk" in text
+        assert "\n0 1\n" in text
+
+    def test_negative_charge_written(self, molecule, tmp_path):
+        create_input_with_charge(molecule, "anion", -1, str(tmp_path))
+        text = (tmp_path / "anion_input.gjf").read_text()
+        assert "\n-1 1\n" in text
+
+    def test_resource_lines_precede_route_section(self, molecule, tmp_path):
+        """Gaussian only honours Link0 (%) lines placed before the route (#) line."""
+        text = self._write(molecule, tmp_path, mem_gb=8, n_processes=2)
+        assert text.index("%mem=") < text.index("\n# td=")
+        assert text.index("%nprocshared=") < text.index("\n# td=")
+
+    def test_stdout_restored_after_write(self, molecule, tmp_path, capsys):
+        """The function redirects sys.stdout to the file; it must put it back."""
+        self._write(molecule, tmp_path)
+        print("still on stdout")
+        assert "still on stdout" in capsys.readouterr().out

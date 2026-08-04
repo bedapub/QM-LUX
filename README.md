@@ -281,6 +281,7 @@ results_directory: results_my_run
 
 crest_threads: 8      # CPUs per CREST job
 gaussian_threads: 24  # CPUs per Gaussian job (host-side)
+gaussian_mem_gb: 20   # memory per Gaussian job, in GB (optional; default 20)
 
 qmlux_image: /path/to/qm-lux.sif   # absolute path to the local .sif file
 
@@ -766,7 +767,20 @@ Then run the workflow normally. For SLURM, load the module once before calling `
 
 `run.sh` warns if `g16` is not in `PATH` when the requested target could reach `gaussian_runner`. The warning is **not** fatal: on a cluster the rule executes on a compute node, which may provide `g16` even when the submit node does not. Targets that never reach `gaussian_runner` (such as `xtb_conf`) do not trigger it.
 
-The `gaussian_threads` config key (default `12`) controls the number of cores requested per Gaussian job.
+#### Gaussian resources
+
+Two config keys control what a Gaussian job gets:
+
+| Key | Default | Sets |
+|---|---|---|
+| `gaussian_threads` | `24` | `%nprocshared` in the `.gjf` **and** the scheduler's CPU request |
+| `gaussian_mem_gb` | `20` | `%mem` in the `.gjf`; the scheduler is asked for 25% more (4 GB minimum) |
+
+Both numbers reach Gaussian through the `.gjf` header written by `gaussian_preparation`, because Gaussian reads `%mem`/`%nprocshared` in preference to `GAUSS_MDEF`/`GAUSS_PDEF` and to the `g16 -m=`/`-p=` flags. Setting either key therefore changes the request *and* what the job actually uses; they cannot drift apart.
+
+The scheduler reservation is deliberately larger than `%mem` — Gaussian's resident set is the `%mem` pool plus executable, basis-set and per-link overhead, so an allocation of exactly `%mem` risks an OOM kill. Set `gaussian_mem_gb` to the largest `%mem` your nodes can host with that headroom.
+
+One case the config keys cannot cover on their own: Snakemake lowers a rule's `threads` to fit `--cores`, so a local run with `--cores 4` and `gaussian_threads: 24` allocates 4 cores while the `.gjf` — written earlier by `gaussian_preparation` — asks for 24. `calculate_uvvis.sh` therefore caps `%nprocshared` to the cores actually allocated, on a copy, leaving the `.gjf` on disk untouched. It reports the cap on stdout, so it shows up in the rule's log. A `%mem` mismatch is warned about but not changed, since nothing lowers the memory reservation the way `--cores` lowers threads.
 
 ### Scratch space
 

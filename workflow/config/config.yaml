@@ -6,7 +6,14 @@ crest_threads: 8
 
 # Number of CPU cores per Gaussian job.
 # Set this to the number of cores your Gaussian license permits.
+# Becomes %nprocshared in the .gjf AND the scheduler's CPU request, so the two
+# cannot disagree.
 gaussian_threads: 24
+
+# Memory per Gaussian job, in GB. Becomes %mem in the .gjf; the scheduler is
+# asked for 25% more (4 GB minimum) to cover Gaussian's overhead on top of the
+# %mem pool. Default 20.
+gaussian_mem_gb: 20
 
 # Singularity image (absolute path to the local .sif file)
 qmlux_image: /path/to/qm-lux.sif   # pulled from ghcr.io/bedapub/qm-lux:latest
