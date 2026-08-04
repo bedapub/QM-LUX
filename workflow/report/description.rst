@@ -31,11 +31,12 @@ Workflow steps
 Rule graph
 ==========
 
-The workflow runs in two phases because Gaussian 16 executes outside the
-container and requires a separate job submission. Phase 1 covers data
-preparation through XTB optimisation; Phase 2 picks up from Gaussian 16
-through ML prediction. The interactive rule graph is available in the
-**Workflow** section of this report.
+The whole workflow -- data preparation through ML prediction, Gaussian 16
+included -- runs as a single Snakemake invocation. Gaussian 16 is scheduled
+as an ordinary rule; it executes outside the container, against your own
+licensed installation, but that needs no separate submission on your part.
+The interactive rule graph is available in the **Workflow** section of this
+report.
 
 References
 ==========
