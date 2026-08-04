@@ -78,19 +78,9 @@ cd "$SMK_DIR"
 
 START=$(date +%s)
 
-echo "--- Phase 1: preparation and xtb configuration ---"
-snakemake --snakefile Snakefile \
-    --configfile "$CONFIG_FILE" \
-    --use-singularity \
-    --singularity-prefix "$SIF_DIR" \
-    --singularity-args "--cleanenv --bind /tmp --bind ${BIND_MOUNTS}" \
-    --cores "$CORES" \
-    --latency-wait 30 \
-    --rerun-incomplete \
-    xtb_conf
-
-echo ""
-echo "--- Phase 2: Gaussian, prediction, results ---"
+# One invocation covers the whole pipeline -- see run_full_test.sh for why this
+# is no longer two calls ('checkpoint xtb_conf' in the Snakefile).
+echo "--- Running the full workflow ---"
 snakemake --snakefile Snakefile \
     --configfile "$CONFIG_FILE" \
     --use-singularity \

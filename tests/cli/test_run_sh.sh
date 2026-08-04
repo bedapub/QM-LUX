@@ -277,10 +277,13 @@ expect_out "snakemake not found in PATH"
 
 echo "=== local mode ==="
 
-run_case "a full local run makes two invocations, then the report" "$CONFIG" --cores 4
+# One snakemake call, not two: 'checkpoint xtb_conf' in the Snakefile lets a
+# single process re-plan the DAG once the per-molecule directories exist. The
+# second call is run_report.sh's --report, which is a separate step.
+run_case "a full local run makes one invocation, then the report" "$CONFIG" --cores 4
 expect_rc 0
-expect_calls 3
-expect_targets "xtb_conf all $RESULTS_DIR.html"
+expect_calls 2
+expect_targets "all $RESULTS_DIR.html"
 expect_log "--cores 4"
 expect_log "--executor local"
 expect_no_log "--workflow-profile"
@@ -295,8 +298,8 @@ expect_out "skipping report generation"
 
 run_case "--target all means the full pipeline" "$CONFIG" --target all --cores 4
 expect_rc 0
-expect_calls 3
-expect_targets "xtb_conf all $RESULTS_DIR.html"
+expect_calls 2
+expect_targets "all $RESULTS_DIR.html"
 
 run_case "positional core count is equivalent to --cores" "$CONFIG" 4
 expect_rc 0
@@ -315,7 +318,7 @@ echo "- $DESC"
 OUT="$(cd "$WORKDIR" && STUB_SNAKEMAKE_RC=1 bash "$RUN_SH" "$CONFIG" --cores 4 2>&1)"
 RC=$?
 expect_rc 1
-expect_out "One or more snakemake processes failed"
+expect_out "snakemake reported one or more failed jobs"
 expect_no_out "Generating report"
 
 echo "=== cluster mode ==="
@@ -374,7 +377,7 @@ echo "=== Gaussian warning ==="
 run_case "a full run warns when g16 is absent" "$CONFIG" --cores 4
 expect_out "Warning: g16 not found in PATH"
 
-run_case "a phase-1 target does not warn about g16" "$CONFIG" --target xtb_conf --cores 4
+run_case "a pre-Gaussian target does not warn about g16" "$CONFIG" --target xtb_conf --cores 4
 expect_no_out "Warning: g16 not found in PATH"
 
 DESC="no warning when g16 is on PATH"

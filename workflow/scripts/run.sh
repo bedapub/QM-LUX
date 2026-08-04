@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 set -uo pipefail
-# NOTE: deliberately NOT `set -e`. The two snakemake invocations below run with
-# --keep-going and their exit codes are accumulated and checked together, so an
-# early abort would skip the combined status check and the report step.
+# NOTE: deliberately NOT `set -e`. Snakemake runs with --keep-going and its exit
+# code is captured and checked explicitly below, so an early abort would skip
+# that status check and the report step.
 
 function usage()
 {
@@ -238,9 +238,9 @@ fi
 #     with an actionable message.
 # It is also irrelevant to targets that never reach gaussian_runner, so only warn
 # for targets that do. Keep this list in sync with the Snakefile: these are the
-# phase-1 rules upstream of gaussian_runner (plus 'model', which is independent).
-phase1_targets=" preparation xtb_conf crest xtb model gaussian_preparation "
-if [[ "$phase1_targets" != *" ${target:-} "* ]] && ! command -v g16 &>/dev/null; then
+# rules upstream of gaussian_runner (plus 'model', which is independent).
+pre_gaussian_targets=" preparation xtb_conf crest xtb model gaussian_preparation "
+if [[ "$pre_gaussian_targets" != *" ${target:-} "* ]] && ! command -v g16 &>/dev/null; then
   echo "Warning: g16 not found in PATH." >&2
   echo "         The gaussian_runner rule runs on the host and needs Gaussian 16." >&2
   echo "         Ignore this if g16 is provided on the compute nodes rather than" >&2
@@ -470,36 +470,31 @@ if [[ -n "$target" ]]; then
     run_snakemake "$target"
     snakemake_exit_code=$?
 else
-    # Complete run. This is deliberately TWO snakemake invocations, and it is an
-    # internal implementation detail -- not two things the user has to run, and
-    # not a manual Gaussian step in between. Gaussian is rule gaussian_runner and
-    # is scheduled by snakemake in the second invocation like any other rule.
+    # Complete run: ONE snakemake invocation covering everything, Gaussian
+    # included. Gaussian is rule gaussian_runner and is scheduled by snakemake
+    # like any other rule -- there is no manual step here.
     #
-    # Why two: rule uvvis derives its inputs by listing the per-molecule
-    # directories under <results_directory>/data_ml/0/, and snakemake evaluates
-    # that while BUILDING the DAG. On a cold run those directories do not exist
-    # yet -- rule preparation creates them -- so a single invocation plans a DAG
-    # with crest, xtb, gaussian_preparation and gaussian_runner missing entirely
-    # and uvvis holding no inputs, which then fails at uvvis.
-    #
-    # Running the first invocation to completion puts the directories on disk;
-    # because the second invocation is a separate PROCESS it re-evaluates the
-    # listing and builds the complete DAG. Converting preparation to a snakemake
-    # checkpoint would collapse this into one invocation and let this branch go
-    # away; until then, do not "simplify" it into a single call.
-    echo "Stage 1 of 2: preparation and conformer setup"
-    run_snakemake xtb_conf
-    snakemake_exit_code=$?
-
-    echo "Stage 2 of 2: CREST/XTB, Gaussian, UV-Vis descriptors and prediction"
+    # This used to be two invocations, and the reason it no longer needs to be
+    # is the 'checkpoint xtb_conf' declaration in the Snakefile. Rule uvvis
+    # derives its inputs by listing the per-molecule directories under
+    # <results_directory>/data_ml/0/, which xtb_conf creates. With xtb_conf a
+    # plain rule, snakemake evaluated that listing while BUILDING the DAG,
+    # before anything had run: it returned nothing, and the DAG came out with
+    # crest, xtb, gaussian_preparation and gaussian_runner missing entirely and
+    # uvvis holding no inputs. Running a first invocation to completion put the
+    # directories on disk so that a second, separate PROCESS could see them.
+    # The checkpoint gets the same effect inside one process -- snakemake
+    # re-plans the DAG after xtb_conf finishes. If it is ever downgraded back
+    # to a plain rule, this branch has to become two invocations again.
     run_snakemake all
-    # Combine exit status of part 1 and part 2
-    snakemake_exit_code=$((snakemake_exit_code + $?))
+    snakemake_exit_code=$?
 fi
 
-# Ensure the script exits with an error if any snakemake command failed
+# Ensure the script exits with an error if snakemake failed. It runs with
+# --keep-going, so a non-zero code here means at least one job failed, not
+# necessarily that the run stopped at the first one.
 if [[ $snakemake_exit_code -ne 0 ]]; then
-    echo "Error: One or more snakemake processes failed."
+    echo "Error: snakemake reported one or more failed jobs."
     exit 1
 fi
 
