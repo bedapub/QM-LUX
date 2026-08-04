@@ -8,21 +8,38 @@ executor: slurm
 
 default-resources:
   qos: '15d'
+  # Floor for rules that declare no mem_mb of their own. Rules that do declare
+  # one (crest, xtb, gaussian_preparation, gaussian_runner) keep their value --
+  # default-resources does not override a rule, unlike set-resources below.
   mem_mb: 10000
+  # Must be a constant. Snakemake's built-in default is
+  # "max(2*input.size_mb, 1000) if input else 50000", and evaluating
+  # input.size_mb for a file another job has yet to produce nests two asyncio
+  # loops. Snakemake catches that (NestedCoroutineError) and falls back to
+  # <TBD>, which means no --tmp reaches SLURM at all and Python prints a
+  # "coroutine ... was never awaited" RuntimeWarning. 1000 is what the built-in
+  # formula computes for this workflow's small inputs anyway. Note --tmp only
+  # filters which nodes are eligible (every node here advertises >= 99 GB); it
+  # is not an enforced quota, so this cannot fail a job that writes more.
+  disk_mb: 1000
 
+# qos only. Memory deliberately belongs to the rules, not here: set-resources
+# OVERRIDES a rule's own resources:, so any mem_mb in this block silently wins
+# over the Snakefile. gaussian_runner is the case that matters -- the Snakefile
+# derives mem_mb from gaussian_mem_gb (the same key that writes %mem into the
+# .gjf header), and a value here would decouple the SLURM reservation from what
+# Gaussian is actually told to use. That disagreement is exactly what the
+# gaussian_mem_gb / gaussian_threads keys exist to prevent. To change Gaussian's
+# memory, edit gaussian_mem_gb in the config -- it moves the header and the
+# reservation together.
 set-resources:
   model:
     qos: '3h'
-    mem_mb: 10000
   xtb_conf:
     qos: '1d'
-    mem_mb: 10000
   xtb:
     qos: '1d'
-    mem_mb: 20000
   crest:
     qos: '15d'
-    mem_mb: 20000   
   gaussian_runner:
     qos: '15d'
-    mem_mb: 100000
