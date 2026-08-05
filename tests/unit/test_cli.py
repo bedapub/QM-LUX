@@ -85,6 +85,39 @@ class TestMLPhototoxCLI:
         assert "--output" in r.stdout
         assert "--type" in r.stdout
 
+    # ------------------------------------------- data_preparation -c handling
+    def _tiny_csv(self, tmp_path):
+        csv = tmp_path / "in.csv"
+        csv.write_text("SRN,SMILES\nCPD-001,c1ccccc1\n")
+        return csv
+
+    def _run_data_preparation(self, tmp_path, chirality_check):
+        # -o is absolute, so the subprocess's cwd does not matter here.
+        return _run(
+            ML_CLI, "data_preparation",
+            "-i", str(self._tiny_csv(tmp_path)),
+            "-o", str(tmp_path / "out"),
+            "-c", chirality_check,
+        )
+
+    def test_chirality_check_is_case_insensitive(self, tmp_path):
+        """'-c yes' must reach the YES path rather than be read as an unknown mode.
+
+        It still fails — YES needs -d — but with the error that names the
+        missing exclusion list, which is what proves the value was normalised.
+        """
+        r = self._run_data_preparation(tmp_path, "yes")
+        assert r.returncode != 0
+        assert "requires current_df" in r.stderr
+        assert "must be 'YES' or 'NO'" not in r.stderr
+
+    def test_unknown_chirality_check_is_rejected(self, tmp_path):
+        """An unsupported -c value must name itself, not raise UnboundLocalError."""
+        r = self._run_data_preparation(tmp_path, "bogus")
+        assert r.returncode != 0
+        assert "must be 'YES' or 'NO'" in r.stderr
+        assert "UnboundLocalError" not in r.stderr
+
     def test_prediction_help(self):
         r = _run(ML_CLI, "prediction", "--help")
         assert r.returncode == 0

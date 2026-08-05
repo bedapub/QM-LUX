@@ -36,15 +36,22 @@ def data_preparation(path, folder, stereo_check, current_df=None):
         ``"NO"`` — enumerate all possible stereo isomers (training mode).
         ``"YES"`` — use the existing stereo assignment and filter compounds
         with more than one unassigned chiral centre.
-    current_df : str, optional
+    current_df : str or None, default None
         Path to an existing pickle file; compounds already present (by SRN)
-        are excluded from the new run.  Only used when ``stereo_check="YES"``.
+        are excluded from the new run.  Required when ``stereo_check="YES"``
+        and ignored when ``stereo_check="NO"``.
 
     Returns
     -------
     pandas.DataFrame
         Feature matrix with columns ``SRN``, ``SMILES_CLEAN``,
         ``fp_Morganclean``, and RDKit descriptor columns.
+
+    Raises
+    ------
+    ValueError
+        If ``stereo_check`` is neither ``"YES"`` nor ``"NO"``, or if it is
+        ``"YES"`` and no ``current_df`` was supplied.
     """
     data = pd.read_csv(path)
     data.to_csv(os.path.join(folder, "input.csv"))
@@ -54,7 +61,19 @@ def data_preparation(path, folder, stereo_check, current_df=None):
     if stereo_check == "NO":
         data_chir = chirality_analysis_all(data, "SMILES_CLEAN")
         print(data_chir)
-    elif stereo_check == "YES" and current_df:
+    elif stereo_check == "YES":
+        # Match on the mode alone. Folding "and current_df" into this condition
+        # sent a YES call with no exclusion list to the else branch, which left
+        # data_chir unassigned and raised UnboundLocalError two lines below
+        # instead of naming the real problem.
+        if not current_df:
+            raise ValueError(
+                "stereo_check='YES' requires current_df: the path to the pickle "
+                "of already-processed compounds whose SRNs are excluded from "
+                "this run (data_preparation -d). Pass stereo_check='NO' to "
+                "enumerate all isomers of every compound instead."
+            )
+
         with open(current_df, "rb") as f:
             df2 = pickle.load(f)
 
@@ -72,7 +91,9 @@ def data_preparation(path, folder, stereo_check, current_df=None):
         data_chir.reset_index(inplace=True, drop=True)
         data_chir["SRN"] = data_chir["SRN"] + "_0"
     else:
-        print("Error in the inputs")
+        raise ValueError(
+            f"stereo_check must be 'YES' or 'NO', got {stereo_check!r}"
+        )
 
     data_chir = data_chir.rename(columns={"SMILES_CLEAN_CHIRAL": "SMILES_CLEAN"})
     data_chir_fp = finger_print_gen(data_chir, "YES", "SMILES_CLEAN", "Morgan", "fp_Morganclean")
