@@ -66,9 +66,11 @@ def main():
                                          help='Output directory name (optional; auto-generated when omitted)')
     parser_data_preparation.add_argument("-c", "--chirality_check", type=str, default="NO",
                                          help='NO: generate all diastereoisomers from unassigned chiral centers; '
-                                              'YES: generate only enantiomers. Default=NO.')
+                                              'YES: generate only enantiomers, and skip compounds already listed '
+                                              'in --current_df. Case-insensitive. Default=NO.')
     parser_data_preparation.add_argument("-d", "--current_df", type=str, required=False,
-                                         help='Path to the current dataframe (required only when chirality_check=YES)')
+                                         help='Path to the pickle of already-processed compounds, whose SRNs are '
+                                              'excluded from this run. Required when --chirality_check=YES.')
 
     # xtb_conf — Snakemake: prepare conformer inputs for xtb/CREST
     parser_xtb_conf = subparsers.add_parser('xtb_conf', help='Prepare conformer inputs for xtb/CREST')
@@ -145,7 +147,10 @@ def main():
     if args.function == 'data_preparation':
         print("Current folder:", work_dir)
         file_name = args.input
-        diast_check = args.chirality_check
+        # Normalise the same way workflow/Snakefile does, so `-c yes` and a
+        # config `chirality_check: yes` reach data_preparation identically.
+        # data_preparation itself rejects anything that is not YES or NO.
+        diast_check = args.chirality_check.strip().upper()
         current_df = args.current_df if diast_check == "YES" else None
 
         if args.outdir:

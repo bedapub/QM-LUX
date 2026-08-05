@@ -203,3 +203,49 @@ class TestDataPreparationStereoYes:
         current_pkl = self._make_current_pkl(tmp_path, [])
         data_preparation(str(csv_path), str(out_dir), "YES", current_pkl)
         assert (out_dir / "xtb_input.pkl").exists()
+
+
+# ---------------------------------------------------------------------------
+# Rejected inputs
+# ---------------------------------------------------------------------------
+
+class TestDataPreparationBadInput:
+    """Every unsupported combination must raise a ValueError that names it.
+
+    These used to fall through to a bare ``print("Error in the inputs")`` and
+    then die on ``UnboundLocalError: ... 'data_chir'`` two lines later, with the
+    diagnostic on stdout and the traceback on stderr.
+    """
+
+    def test_yes_without_current_df_raises(self, tmp_path):
+        csv_path = _write_input_csv(tmp_path)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        with pytest.raises(ValueError, match="requires current_df"):
+            data_preparation(str(csv_path), str(out_dir), "YES")
+
+    def test_yes_with_empty_current_df_raises(self, tmp_path):
+        """An empty string is as unusable as None, and reaches the same check."""
+        csv_path = _write_input_csv(tmp_path)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        with pytest.raises(ValueError, match="requires current_df"):
+            data_preparation(str(csv_path), str(out_dir), "YES", "")
+
+    @pytest.mark.parametrize("stereo_check", ["yes", "Yes", "no", "bogus", "", None])
+    def test_unsupported_stereo_check_raises(self, tmp_path, stereo_check):
+        """Only the exact strings 'YES' and 'NO' are accepted; callers that may
+        pass other spellings normalise first (see cli.py and workflow/Snakefile).
+        """
+        csv_path = _write_input_csv(tmp_path)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        with pytest.raises(ValueError, match="must be 'YES' or 'NO'"):
+            data_preparation(str(csv_path), str(out_dir), stereo_check)
+
+    def test_error_names_the_offending_value(self, tmp_path):
+        csv_path = _write_input_csv(tmp_path)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        with pytest.raises(ValueError, match="bogus"):
+            data_preparation(str(csv_path), str(out_dir), "bogus")
