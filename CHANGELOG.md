@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Breaking for callers relying on the fallback:** `finger_print_gen` now
+  raises `ValueError` for a `method` that is not exactly `"MACCS"`, `"Morgan"`
+  or `"E-state"`. It previously printed a warning to stdout and returned 167-bit
+  MACCS keys in a column named after the fingerprint that was asked for, so a
+  case typo — `method="morgan"` — silently produced different descriptors than
+  requested with no downstream way to tell. Case is deliberately not normalised.
+  No in-tree caller is affected: `data_preparation` passes `"Morgan"` and the
+  method is not configurable from the workflow.
+
 ## [1.0.0] — 2026-07-29
 
 ### Added

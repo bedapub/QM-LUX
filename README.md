@@ -715,7 +715,7 @@ docker run --rm -v "$PWD/tests:/app/tests" -w /app \
     ghcr.io/bedapub/qm-lux:1.0.0 python -m pytest tests/unit/ -q
 ```
 
-All 327 tests must pass on a clean checkout.
+All 344 tests must pass on a clean checkout.
 
 ### Command-line tests for `run.sh`
 
