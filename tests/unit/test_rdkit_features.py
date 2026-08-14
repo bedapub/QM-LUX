@@ -129,11 +129,41 @@ class TestFingerPrintGen:
         result = finger_print_gen(df, "YES", "SMILES_CLEAN", "Morgan", "fp_morgan", bits=512)
         assert len(result["fp_morgan"].iloc[0]) == 512
 
-    def test_unknown_method_falls_back_to_maccs(self):
-        """Unknown method falls back to MACCS (167 bits)."""
+    def test_unknown_method_raises(self):
+        """An unsupported method is a programming error, not a fallback."""
         df = self._df(["c1ccccc1"])
-        result = finger_print_gen(df, "YES", "SMILES_CLEAN", "INVALID_METHOD", "fp_test")
-        assert len(result["fp_test"].iloc[0]) == 167
+        with pytest.raises(ValueError) as exc:
+            finger_print_gen(df, "YES", "SMILES_CLEAN", "INVALID_METHOD", "fp_test")
+        assert "INVALID_METHOD" in str(exc.value)
+
+    def test_the_message_names_the_supported_methods(self):
+        """The caller has to be told what to pass instead."""
+        df = self._df(["c1ccccc1"])
+        with pytest.raises(ValueError) as exc:
+            finger_print_gen(df, "YES", "SMILES_CLEAN", "RDKIT", "fp_test")
+        message = str(exc.value)
+        assert all(m in message for m in ("MACCS", "Morgan", "E-state"))
+
+    @pytest.mark.parametrize("method", ["morgan", "maccs", "e-state", "MORGAN"])
+    def test_the_match_is_case_sensitive_and_a_typo_raises(self, method):
+        """The hazard this guard exists for.
+
+        Before the raise, `method="morgan"` returned 167-bit MACCS keys in a
+        column named after the Morgan fingerprint the caller asked for, with
+        one line on stdout as the only evidence. Training then ran on entirely
+        different descriptors and the metrics looked plausible. Case is not
+        normalised on purpose — that would hide the same typo more politely.
+        """
+        df = self._df(["c1ccccc1"])
+        with pytest.raises(ValueError):
+            finger_print_gen(df, "YES", "SMILES_CLEAN", method, "fp_test")
+
+    def test_no_column_is_added_when_the_method_is_rejected(self):
+        """The input DataFrame is left alone — nothing half-written."""
+        df = self._df(["c1ccccc1"])
+        with pytest.raises(ValueError):
+            finger_print_gen(df, "YES", "SMILES_CLEAN", "morgan", "fp_test")
+        assert "fp_test" not in df.columns
 
     def test_fp_is_numpy_array(self):
         df = self._df(["c1ccccc1"])

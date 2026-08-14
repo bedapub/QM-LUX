@@ -60,8 +60,8 @@ def finger_print_gen(mol, load_DF, smiles, method, fp_name, bits=1024, radius=3)
 
     Supported fingerprint types are ``"MACCS"`` (167-bit MACCS keys),
     ``"Morgan"`` (configurable bit count and radius), and ``"E-state"``
-    (RDKit path fingerprint used as a proxy).  An unknown ``method`` falls back
-    to MACCS with a warning.
+    (RDKit path fingerprint used as a proxy).  The match is exact and
+    case-sensitive; anything else is rejected.
 
     Parameters
     ----------
@@ -86,6 +86,13 @@ def finger_print_gen(mol, load_DF, smiles, method, fp_name, bits=1024, radius=3)
     -------
     pandas.DataFrame
         Copy of the input DataFrame with ``fp_name`` column added.
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is not one of the three supported names.  Substituting a
+        default would put the wrong descriptors in a column named after the one
+        that was asked for, which no caller can detect downstream.
     """
     if load_DF == "NO":
         dataframe = pd.read_csv(mol, index_col=0)
@@ -102,8 +109,9 @@ def finger_print_gen(mol, load_DF, smiles, method, fp_name, bits=1024, radius=3)
     elif method == "E-state":
         fp = [np.array(Chem.RDKFingerprint(m)) for m in mol_smi]
     else:
-        print(f"Warning: Wrong method specified: {method}. The default MACCS will be used instead.")
-        fp = [np.array(MACCSkeys.GenMACCSKeys(m)) for m in mol_smi]
+        raise ValueError(
+            f"method must be 'MACCS', 'Morgan' or 'E-state', got {method!r}"
+        )
 
     dataframe2 = dataframe.copy()
     dataframe2[fp_name] = fp

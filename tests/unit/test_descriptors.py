@@ -138,16 +138,22 @@ class TestFingerPrintGenMACCS:
 
 
 # ---------------------------------------------------------------------------
-# finger_print_gen — RDKIT method bug
+# finger_print_gen — unsupported method
 # ---------------------------------------------------------------------------
 
-class TestFingerPrintGenRDKITBug:
-    def test_rdkit_method_falls_back_to_maccs(self):
-        """Unknown method falls back to MACCS with a printed warning."""
+class TestFingerPrintGenUnsupportedMethod:
+    """``"RDKIT"`` is the method string this repo has been asked for most.
+
+    There has never been an RDKit-path branch under that name — ``"E-state"``
+    is the RDKit path fingerprint — so it used to return 167-bit MACCS keys in
+    a column named ``fp_RDKIT``. It now says so.
+    """
+
+    def test_rdkit_method_raises(self):
         df = pd.DataFrame({"SMILES": ["c1ccccc1"]})
-        result = finger_print_gen(df, "YES", "SMILES", "RDKIT", "fp_RDKIT")
-        assert "fp_RDKIT" in result.columns
-        assert result["fp_RDKIT"].iloc[0].shape == (167,)
+        with pytest.raises(ValueError) as exc:
+            finger_print_gen(df, "YES", "SMILES", "RDKIT", "fp_RDKIT")
+        assert "RDKIT" in str(exc.value)
 
 
 # ---------------------------------------------------------------------------
