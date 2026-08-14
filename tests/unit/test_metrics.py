@@ -200,3 +200,62 @@ class TestTableStatCalIter:
     def test_oversampling_no(self):
         df = self._call("NO")
         assert df["Method Training"].iloc[0] == "NO Oversampling"
+
+
+# ---------------------------------------------------------------------------
+# The three builders agree on how oversampling is spelled
+# ---------------------------------------------------------------------------
+
+class TestOversamplingLabelIsShared:
+    """One mapping, three tables.
+
+    ``table_stat_cal`` and ``table_stat_cal_iter`` used to fold everything that
+    was not "NO" into the literal "YES Oversampling", while
+    ``table_stat_cal_std`` had a real SMOTE branch. A SMOTE run was therefore
+    labelled "SMOTE" or "YES Oversampling" depending only on which builder ran,
+    and the fold-level table could not be joined to the aggregate one on
+    Method Training.
+    """
+
+    BUILDERS = {
+        "std": lambda ov: table_stat_cal_std(
+            "RF", "desc", ov, "external", "roc_auc", "cal",
+            0.8, 0.05, 0.75, 0.04, 0.7, 0.03, 0.8, 0.02,
+            0.6, 0.01, 0.78, 0.03, 0.72, 0.02,
+        ),
+        "cal": lambda ov: table_stat_cal(
+            "RF", "desc", ov, "external", "roc_auc", "cal",
+            0.8, 0.05, 0.75, 0.04, 0.7, 0.03, 0.8, 0.02, 0.6, 0.01,
+        ),
+        "iter": lambda ov: table_stat_cal_iter(
+            "RF", "desc", ov, "external", "roc_auc", "cal",
+            0.8, 0.75, 0.7, 0.8, 0.6, 0.78, 0.72, 3,
+        ),
+    }
+
+    @pytest.mark.parametrize("raw,expected", [
+        ("NO", "NO Oversampling"),
+        ("YES", "YES Oversampling"),
+        ("SMOTE", "SMOTE"),
+    ])
+    def test_every_builder_spells_it_the_same_way(self, raw, expected):
+        labels = {name: b(raw)["Method Training"].iloc[0]
+                  for name, b in self.BUILDERS.items()}
+        assert set(labels.values()) == {expected}, labels
+
+    def test_smote_survives_in_all_three(self):
+        """The specific collapse this fix removes."""
+        for name, build in self.BUILDERS.items():
+            assert build("SMOTE")["Method Training"].iloc[0] == "SMOTE", name
+
+    @pytest.mark.parametrize("raw", ["smote", "Yes", "", "BorderlineSMOTE"])
+    def test_an_unrecognised_mode_is_recorded_verbatim_not_relabelled(self, raw):
+        """Deliberately not a raise, and deliberately not "YES Oversampling".
+
+        These builders run after training, so the honest record is what was
+        actually requested; folding an unknown mode into a known label is what
+        made the old bare `else` misreport. Rejecting a bad value belongs at
+        the point the run is configured, not here.
+        """
+        for name, build in self.BUILDERS.items():
+            assert build(raw)["Method Training"].iloc[0] == raw, name

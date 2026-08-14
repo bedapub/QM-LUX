@@ -21,6 +21,31 @@ from sklearn.metrics import (
 )
 
 
+#: How an ``oversampling`` argument is spelled in the "Method Training" column
+#: of every results table. One mapping, shared by all three table builders --
+#: they used to carry a copy each, and two of the three collapsed everything
+#: that was not "NO" into "YES Oversampling", so a SMOTE run was reported as a
+#: plain oversampled one and could not be joined to the tables that spelled it
+#: correctly.
+_OVERSAMPLING_LABELS = {
+    "NO": "NO Oversampling",
+    "YES": "YES Oversampling",
+    "SMOTE": "SMOTE",
+}
+
+
+def _oversampling_label(oversampling):
+    """Spell ``oversampling`` the way the results tables record it.
+
+    An unrecognised value is passed through unchanged rather than folded into
+    one of the three known labels: this is a reporting helper called after the
+    run, and quietly relabelling an unknown mode is what made the old bare
+    ``else`` misreport SMOTE. Rejecting a bad value is the caller's job, at the
+    point the run is configured.
+    """
+    return _OVERSAMPLING_LABELS.get(oversampling, oversampling)
+
+
 def model_performance(ml_model, test_x, test_y, verbose=True):
     """Calculate and optionally print classification performance metrics.
 
@@ -216,12 +241,7 @@ def table_stat_cal_std(label, attributes, oversampling, validation, scoring, cal
     pandas.DataFrame
         Single-row DataFrame with all metrics and their standard deviations.
     """
-    if oversampling == "NO":
-        oversampling = "NO Oversampling"
-    elif oversampling == "YES":
-        oversampling = "YES Oversampling"
-    elif oversampling == "SMOTE":
-        oversampling = "SMOTE"
+    oversampling = _oversampling_label(oversampling)
 
     df = pd.DataFrame({
         "ML Method": label, "Descriptors": attributes, "Method Training": oversampling,
@@ -250,8 +270,9 @@ def table_stat_cal(label, attributes, oversampling, validation, scoring, cal_sco
         ML method name.
     attributes : str
         Descriptor set name.
-    oversampling : {"NO", "YES"}
-        Oversampling strategy.
+    oversampling : {"NO", "YES", "SMOTE"}
+        Oversampling strategy.  Recorded via :func:`_oversampling_label`, the
+        same mapping every table builder uses.
     validation : str
         Validation type.
     scoring : str
@@ -279,10 +300,7 @@ def table_stat_cal(label, attributes, oversampling, validation, scoring, cal_sco
         the ``_std`` columns).  Prefer :func:`table_stat_cal_std`, which takes
         every metric explicitly.
     """
-    if oversampling == "NO":
-        oversampling = "NO Oversampling"
-    else:
-        oversampling = "YES Oversampling"
+    oversampling = _oversampling_label(oversampling)
 
     df = pd.DataFrame({
         "ML Method": label, "Descriptors": attributes, "Method Training": oversampling,
@@ -308,8 +326,9 @@ def table_stat_cal_iter(label, attributes, oversampling, validation, scoring, ca
         ML method name.
     attributes : str
         Descriptor set name.
-    oversampling : {"NO", "YES"}
-        Oversampling strategy.
+    oversampling : {"NO", "YES", "SMOTE"}
+        Oversampling strategy.  Recorded via :func:`_oversampling_label`, the
+        same mapping every table builder uses.
     validation : str
         Validation type.
     scoring : str
@@ -338,10 +357,7 @@ def table_stat_cal_iter(label, attributes, oversampling, validation, scoring, ca
     pandas.DataFrame
         Single-row DataFrame for this iteration.
     """
-    if oversampling == "NO":
-        oversampling = "NO Oversampling"
-    else:
-        oversampling = "YES Oversampling"
+    oversampling = _oversampling_label(oversampling)
 
     df = pd.DataFrame({
         "ML Method": label, "Descriptors": attributes, "Method Training": oversampling,
