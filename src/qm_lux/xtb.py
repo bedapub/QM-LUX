@@ -227,23 +227,29 @@ def sdf_run(folder_mol, list_comp, SMILES, all_str, rmsthresh, nconfs, cluster_n
     cluster_number : int
         Subfolder index under ``folder_mol``.
     check : {"OVERWRITE", "NO OVERWRITE"}
-        ``"OVERWRITE"`` removes existing output folders before regenerating.
+        ``"OVERWRITE"`` removes existing output folders before regenerating;
+        ``"NO OVERWRITE"`` leaves an existing folder untouched and skips that
+        compound.  The match is exact and case-sensitive.
 
     Returns
     -------
     str
-        Force-field error status (``"OK"`` or ``"ERROR"``) of the *last*
-        compound that was actually processed — not an aggregate over the run.
-        Per-compound failures are printed, not returned.
+        ``"ERROR"`` if *any* processed compound failed conformer embedding or
+        force-field evaluation, otherwise ``"OK"``.  A batch in which nothing
+        was processed — an empty ``list_comp``, or every folder already present
+        under ``"NO OVERWRITE"`` — is a no-op and returns ``"OK"``.
+        Per-compound detail is printed, as before.
 
     Raises
     ------
-    UnboundLocalError
-        If no compound is processed to completion — every folder already
-        existed with ``check="NO OVERWRITE"``, or every compound failed
-        conformer embedding (``error_conf``).  The return value is read from
-        a variable that is only assigned inside the success branch.
+    ValueError
+        If ``check`` is neither ``"OVERWRITE"`` nor ``"NO OVERWRITE"``.
     """
+    if check not in ("OVERWRITE", "NO OVERWRITE"):
+        raise ValueError(
+            f"check must be 'OVERWRITE' or 'NO OVERWRITE', got {check!r}"
+        )
+
     folder_mol = os.path.join(folder_mol, str(cluster_number)) + os.sep
     skip = []
     for i in range(0, len(list_comp)):
@@ -251,16 +257,15 @@ def sdf_run(folder_mol, list_comp, SMILES, all_str, rmsthresh, nconfs, cluster_n
         if not os.path.exists(subfolder):
             os.makedirs(subfolder)
             skip.append("go")
+        elif check == "NO OVERWRITE":
+            skip.append("stop")
         else:
-            if check == "NO OVERWRITE":
-                skip.append("stop")
-            elif check == "OVERWRITE":
-                shutil.rmtree(subfolder)
-                os.makedirs(subfolder)
-                skip.append("go")
+            shutil.rmtree(subfolder)
+            os.makedirs(subfolder)
+            skip.append("go")
 
-    count = 0
     error_message = []
+    failed = False
     for index, cmp in enumerate(list_comp):
         if skip[index] == "go":
             sel_comp = all_str[["SRN", SMILES]][all_str["SRN"] == cmp]
@@ -269,12 +274,19 @@ def sdf_run(folder_mol, list_comp, SMILES, all_str, rmsthresh, nconfs, cluster_n
 
             if conf[4] == "error_conf":
                 print("Conformer Error")
-                count = count + 1
+                failed = True
                 continue
             else:
                 al_mol = get_energy_conf(conf[0], conf[2], conf[3])
-                message_err = write_SDF(al_mol[0], al_mol[1], info_mol[1], count, info_mol[2], al_mol[2], conf[4])
-                count = count + 1
+                # Index the output folder by the compound's position in
+                # list_comp, NOT by a counter that only advances on processed
+                # compounds. The counter drifted from the folder the first loop
+                # created: one skipped compound wrote every later one an index
+                # too low, over the top of the file "NO OVERWRITE" was asked to
+                # preserve, and left the last folder empty.
+                message_err = write_SDF(al_mol[0], al_mol[1], info_mol[1], index, info_mol[2], al_mol[2], conf[4])
+                if al_mol[2] != "OK":
+                    failed = True
                 if message_err != "OK":
                     error_message.append(message_err)
 
@@ -284,6 +296,10 @@ def sdf_run(folder_mol, list_comp, SMILES, all_str, rmsthresh, nconfs, cluster_n
             continue
 
     print(error_message)
-    print(al_mol[2])
 
-    return al_mol[2]
+    # Aggregate over the whole batch. Returning the last compound's status
+    # reported "OK" for a run in which an earlier compound had failed.
+    status = "ERROR" if failed else "OK"
+    print(status)
+
+    return status
