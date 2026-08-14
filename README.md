@@ -65,7 +65,6 @@ Results appear in `<results_directory>/summary.csv` and a per-compound HTML repo
   - [How the DAG is built](#how-the-dag-is-built)
   - [Workflow DAG](#workflow-dag)
 - [Running with the CLI](#running-with-the-cli)
-- [Python API](#python-api)
 - [Providing a pre-trained model](#providing-a-pre-trained-model)
 - [Output](#output)
   - [Snakemake HTML report](#snakemake-html-report)
@@ -529,35 +528,6 @@ $RUN python -m qm_lux.cli get_pred_UVvis
 $RUN python -m qm_lux.cli prediction -i training_results/
 $RUN python -m qm_lux.cli get_results -t PRED
 ```
-
----
-
-## Python API
-
-The `qm_lux` package exposes a stable public API for programmatic use:
-
-```python
-from qm_lux import (
-    get_UV_vis_from_gaussian_output,
-    extract_UV_gaussian_output,
-    run_AUCs_spectra,
-    ML_preparation_test_set,
-)
-
-# Parse Gaussian TD-DFT logs and write per-molecule .xy UV-Vis spectra
-get_UV_vis_from_gaussian_output(base_dir)
-
-# Read .xy files into a DataFrame (wavelength, epsilon, SRN columns)
-df_uv = extract_UV_gaussian_output(base_dir)
-
-# Compute AUC descriptors over four wavelength ranges
-df_auc = run_AUCs_spectra(base_dir)
-
-# Assemble the ML feature matrix (AUC descriptors + fingerprints + RDKit properties)
-X = ML_preparation_test_set(df_auc, fp_df)
-```
-
-See `print(qm_lux.__all__)` for the full list of exported symbols.
 
 ---
 
