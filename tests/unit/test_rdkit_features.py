@@ -221,6 +221,56 @@ class TestFingerPrintGen:
         assert len(result) == len(_SMILES)
 
 
+class TestFingerPrintGenLoadDF:
+    """``load_DF`` used to be unvalidated, and only the exact string "NO"
+    selected the file path — every other value meant "already a DataFrame".
+
+    Neither of the two ways to get it wrong named the argument:
+
+      csv path + "No"   -> AttributeError: 'str' object has no attribute 'copy'
+      DataFrame + "NO"  -> TypeError from inside pandas' read_csv
+
+    The first is a bad value; the second is two individually-valid arguments
+    disagreeing, so validating ``load_DF`` alone would have fixed only one.
+    """
+
+    def _df(self):
+        return pd.DataFrame({"SMILES_CLEAN": ["c1ccccc1"]})
+
+    @pytest.mark.parametrize("load_DF", ["No", "no", "Yes", "yes", "", None, True])
+    def test_an_unrecognised_value_raises(self, load_DF):
+        with pytest.raises(ValueError) as exc:
+            finger_print_gen(self._df(), load_DF, "SMILES_CLEAN", "Morgan", "fp")
+        assert "load_DF must be 'YES' or 'NO'" in str(exc.value)
+
+    def test_the_message_echoes_the_value(self):
+        with pytest.raises(ValueError) as exc:
+            finger_print_gen(self._df(), "no", "SMILES_CLEAN", "Morgan", "fp")
+        assert "'no'" in str(exc.value)
+
+    def test_dataframe_with_NO_is_named_not_a_pandas_traceback(self):
+        """Both arguments are individually legal; they disagree."""
+        with pytest.raises(ValueError) as exc:
+            finger_print_gen(self._df(), "NO", "SMILES_CLEAN", "Morgan", "fp")
+        message = str(exc.value)
+        assert "load_DF='NO'" in message and "DataFrame" in message
+
+    def test_path_with_YES_is_named_too(self, tmp_path):
+        csv_path = tmp_path / "mols.csv"
+        self._df().to_csv(csv_path)
+        with pytest.raises(ValueError) as exc:
+            finger_print_gen(str(csv_path), "YES", "SMILES_CLEAN", "Morgan", "fp")
+        message = str(exc.value)
+        assert "load_DF='YES'" in message and str(csv_path) in message
+
+    def test_the_two_correct_spellings_still_work(self, tmp_path):
+        csv_path = tmp_path / "mols.csv"
+        self._df().to_csv(csv_path)
+        from_df = finger_print_gen(self._df(), "YES", "SMILES_CLEAN", "Morgan", "fp")
+        from_csv = finger_print_gen(str(csv_path), "NO", "SMILES_CLEAN", "Morgan", "fp")
+        np.testing.assert_array_equal(from_df["fp"].iloc[0], from_csv["fp"].iloc[0])
+
+
 # ---------------------------------------------------------------------------
 # smi_to_descriptors
 # ---------------------------------------------------------------------------

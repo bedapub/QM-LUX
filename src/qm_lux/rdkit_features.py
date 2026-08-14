@@ -70,7 +70,8 @@ def finger_print_gen(mol, load_DF, smiles, method, fp_name, bits=1024, radius=3)
         ``load_DF="YES"``).
     load_DF : {"YES", "NO"}
         Whether ``mol`` is already a DataFrame (``"YES"``) or a file path
-        (``"NO"``).
+        (``"NO"``).  Exact and case-sensitive, and it must agree with the type
+        of ``mol``.
     smiles : str
         Name of the SMILES column in the DataFrame.
     method : {"MACCS", "Morgan", "E-state"}
@@ -93,7 +94,28 @@ def finger_print_gen(mol, load_DF, smiles, method, fp_name, bits=1024, radius=3)
         If ``method`` is not one of the three supported names.  Substituting a
         default would put the wrong descriptors in a column named after the one
         that was asked for, which no caller can detect downstream.
+    ValueError
+        If ``load_DF`` is not ``"YES"`` or ``"NO"``, or if it disagrees with the
+        type of ``mol``.
     """
+    if load_DF not in ("YES", "NO"):
+        raise ValueError(f"load_DF must be 'YES' or 'NO', got {load_DF!r}")
+
+    # Check load_DF against mol's type as well as against the two legal
+    # spellings. Only one of the two mistakes is a bad value; the other is a
+    # disagreement between two arguments that are individually fine, and it
+    # used to surface as a TypeError from inside pandas' read_csv.
+    if load_DF == "NO" and isinstance(mol, pd.DataFrame):
+        raise ValueError(
+            "load_DF='NO' means mol is a path to a CSV file, but mol is a "
+            "DataFrame. Pass load_DF='YES' for an in-memory DataFrame."
+        )
+    if load_DF == "YES" and isinstance(mol, str):
+        raise ValueError(
+            "load_DF='YES' means mol is a DataFrame, but mol is a string. "
+            f"Pass load_DF='NO' to read {mol!r} from disk."
+        )
+
     if load_DF == "NO":
         dataframe = pd.read_csv(mol, index_col=0)
         dataframe.dropna(inplace=True)
