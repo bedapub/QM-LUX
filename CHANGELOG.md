@@ -8,6 +8,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Fixed
+- `finger_print_gen` validates `load_DF`, and checks it against the type of
+  `mol`. Only the exact string `"NO"` used to select the file-reading path, so
+  a case typo on a CSV path died with `AttributeError: 'str' object has no
+  attribute 'copy'`, and passing a DataFrame with `load_DF="NO"` died with a
+  `TypeError` from inside `pandas.read_csv`. Neither message named the
+  argument. Both are now `ValueError` naming `load_DF` and the value.
+- The three results-table builders in `qm_lux.metrics` share one mapping for
+  the `Method Training` column. `table_stat_cal` and `table_stat_cal_iter`
+  folded everything that was not `"NO"` into the literal `"YES Oversampling"`,
+  so a `"SMOTE"` run was recorded as a plain oversampled one — while
+  `table_stat_cal_std` spelled it correctly, making the two tables from a run
+  impossible to join on that column. An unrecognised mode is now recorded
+  verbatim by all three rather than relabelled.
 - `sdf_run` no longer raises `UnboundLocalError` when nothing is processed. An
   empty `list_comp`, a batch in which every folder already exists under
   `"NO OVERWRITE"`, and a batch in which every compound fails conformer
