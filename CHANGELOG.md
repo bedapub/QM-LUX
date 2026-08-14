@@ -7,7 +7,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+- `sdf_run` no longer raises `UnboundLocalError` when nothing is processed. An
+  empty `list_comp`, a batch in which every folder already exists under
+  `"NO OVERWRITE"`, and a batch in which every compound fails conformer
+  embedding are all handled instead of falling off the end of the function.
+- `sdf_run` no longer writes a compound into another compound's output folder.
+  The output index came from a counter that only advanced on processed
+  compounds, so under `"NO OVERWRITE"` one skipped compound shifted every later
+  one an index too low — over the top of the file the flag was asked to
+  preserve — and left the last folder empty. The index now comes from the
+  compound's position in `list_comp`, which is how the folders were created.
+- `sdf_run` rejects a `check` value other than `"OVERWRITE"` or
+  `"NO OVERWRITE"` with `ValueError`. An unrecognised value used to leave the
+  internal skip list short and surface as an `IndexError` from deep inside the
+  processing loop.
+
 ### Changed
+- **Breaking for callers reading the return value:** `sdf_run` returns a status
+  aggregated over the whole batch — `"ERROR"` if any compound failed, otherwise
+  `"OK"`. It previously returned the *last* processed compound's status, so a
+  failure on any earlier compound was reported as `"OK"`. A batch in which
+  nothing was processed returns `"OK"`. `generate_conf_xtb`, the only in-tree
+  caller, discards the value.
 - **Breaking for callers relying on the fallback:** `finger_print_gen` now
   raises `ValueError` for a `method` that is not exactly `"MACCS"`, `"Morgan"`
   or `"E-state"`. It previously printed a warning to stdout and returned 167-bit
