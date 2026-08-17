@@ -243,7 +243,13 @@ def main():
 
             if path_input_results:
                 if args.type == "CV":
-                    get_results(path_input_results)
+                    # A --type CV pointed at a data_ml* directory is a usage
+                    # mistake, so it exits with the message rather than a
+                    # traceback -- matching the two sys.exit sites above.
+                    try:
+                        get_results(path_input_results)
+                    except ValueError as error:
+                        sys.exit(str(error))
                 elif args.type == "PRED":
                     get_mol_ML_results(path_input_results)
                 else:
