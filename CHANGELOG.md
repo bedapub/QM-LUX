@@ -8,6 +8,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [Unreleased]
 
 ### Fixed
+- `get_results` selects cross-validation files by content rather than by name.
+  A `results_ML*` filename does not identify one: the prediction step writes
+  `<data_ml*>/ML_results/results_ML<descriptors><model>.csv`, whose columns are
+  `pred`/`prob`/`Descriptors`/`ML_Method` and which carries no metrics. Both
+  matched the old glob, with two consequences. Pointed at a `data_ml*` tree it
+  found only prediction files and died on `sort_values(by=["MCC"])` with a bare
+  `KeyError: 'MCC'`, naming a column but neither the directory nor the mistake;
+  that is now a `ValueError` saying what was found and what to run instead.
+  Pointed at a genuine training-results tree it *worked*, and quietly folded
+  the prediction rows in beside the metrics — a measured run produced 12 rows
+  of which 1 was a cross-validation row and 11 were predictions with `NaN` for
+  every metric column. Skipped files are now named on stdout.
+  `CVs_error_cal_folds.txt` is deliberately unchanged: any `results_ML*` file
+  still counts as "this directory produced results", so a directory holding
+  only predictions is not newly listed under `NO CVs FOR:`. Verified
+  byte-identical against the previous implementation on the same tree.
 - `finger_print_gen` validates `load_DF`, and checks it against the type of
   `mol`. Only the exact string `"NO"` used to select the file-reading path, so
   a case typo on a CSV path died with `AttributeError: 'str' object has no
