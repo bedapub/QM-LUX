@@ -46,7 +46,7 @@ ENV PYTHONNOUSERSITE=1
 # Needed here: pyproject.toml + README.md (poetry-core reads both at build time)
 # and the package source. The Snakemake workflow itself runs on the HOST and
 # bind-mounts the working directory, so workflow/ is deliberately NOT copied.
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml README.md LICENSE NOTICE THIRD_PARTY_LICENSES.md ./
 COPY src/ ./src/
 
 # Install qm_lux so importlib.metadata can resolve its version from inside the image.

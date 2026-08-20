@@ -18,6 +18,11 @@
 # The image also redistributes LGPL-3.0 binaries (XTB, CREST), so shipping the
 # license text matters for the OSSAN/attribution work too.
 !LICENSE
+# Apache-2.0 §4(d) plus the LGPL attribution/source-offer obligations. Both files
+# describe THIS image's contents, so they have to travel inside it -- a NOTICE
+# that only exists in the git repo does not reach someone who pulls the image.
+!NOTICE
+!THIRD_PARTY_LICENSES.md
 
 # Re-exclude junk that could otherwise ride along inside an allowed directory.
 **/__pycache__/

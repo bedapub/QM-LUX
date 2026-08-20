@@ -74,7 +74,9 @@ Results appear in `<results_directory>/summary.csv` and a per-compound HTML repo
 - [Troubleshooting](#troubleshooting)
 - [Support](#support)
 - [Citation](#citation)
+- [References](#references)
 - [License](#license)
+  - [Third-party components](#third-party-components)
 
 ---
 
@@ -793,7 +795,7 @@ singularity_args_param: "--cleanenv --bind /tmp --bind /scratch/myproject --bind
 
 **Gaussian is a commercial dependency.** Users without Gaussian can skip the QM steps if a pre-computed descriptor pickle is available.
 
-**XTB / CREST** are open source and bundled in the container image (XTB 6.4.1, CREST 2.11.2). They are not installed in the Poetry development environment.
+**XTB / CREST** are bundled in the container image — [XTB](https://github.com/grimme-lab/xtb) 6.4.1 and [CREST](https://github.com/crest-lab/crest) 2.11.2, both **LGPL-3.0-or-later** (see [Third-party components](#third-party-components)). They are not installed in the Poetry development environment.
 
 ---
 
@@ -862,6 +864,53 @@ https://github.com/bedapub/QM-LUX
 
 ---
 
+## References
+
+QM-LUX is a workflow built on third-party scientific software. If you publish results produced with it, please cite the methods you actually used alongside QM-LUX itself.
+
+**Semi-empirical QM and conformer sampling**
+
+- **XTB (program)** — Bannwarth, C.; Caldeweyher, E.; Ehlert, S.; Hansen, A.; Pracht, P.; Seibert, J.; Spicher, S.; Grimme, S. Extended tight-binding quantum chemistry methods. *WIREs Comput. Mol. Sci.* **2021**, *11*, e1493. [doi:10.1002/wcms.1493](https://doi.org/10.1002/wcms.1493)
+- **GFN2-xTB (method)** — Bannwarth, C.; Ehlert, S.; Grimme, S. GFN2-xTB — An Accurate and Broadly Parametrized Self-Consistent Tight-Binding Quantum Chemical Method. *J. Chem. Theory Comput.* **2019**, *15*, 1652–1671. [doi:10.1021/acs.jctc.8b01176](https://doi.org/10.1021/acs.jctc.8b01176)
+- **ALPB (implicit solvation)** — Ehlert, S.; Stahn, M.; Spicher, S.; Grimme, S. Robust and Efficient Implicit Solvation Model for Fast Semiempirical Methods. *J. Chem. Theory Comput.* **2021**, *17*, 4250–4261. [doi:10.1021/acs.jctc.1c00471](https://doi.org/10.1021/acs.jctc.1c00471)
+- **CREST** — Pracht, P.; Bohle, F.; Grimme, S. Automated exploration of the low-energy chemical space with fast quantum chemical methods. *Phys. Chem. Chem. Phys.* **2020**, *22*, 7169–7192. [doi:10.1039/C9CP06869D](https://doi.org/10.1039/C9CP06869D) — this is the paper for the 2.11.x series shipped here. See also Pracht, P. *et al.* CREST — A program for the exploration of low-energy molecular chemical space. *J. Chem. Phys.* **2024**, *160*, 114110. [doi:10.1063/5.0197592](https://doi.org/10.1063/5.0197592)
+
+**Excited states**
+
+- **Gaussian 16** — Frisch, M. J. *et al.* Gaussian 16, Gaussian Inc., Wallingford CT, 2016. Gaussian's own citation format names the revision; cite the one you ran, which QM-LUX cannot know. The workflow requests B3LYP/6-311+G(d,p), 30 singlet states, water PCM (`src/qm_lux/utils/gaussian.py`).
+
+**Structure generation and cheminformatics**
+
+- **RDKit** — Landrum, G. *et al.* RDKit: Open-Source Cheminformatics Software. <https://www.rdkit.org>
+- **ETKDG (conformer embedding)** — Riniker, S.; Landrum, G. A. Better Informed Distance Geometry. *J. Chem. Inf. Model.* **2015**, *55*, 2562–2574. [doi:10.1021/acs.jcim.5b00654](https://doi.org/10.1021/acs.jcim.5b00654)
+- **MMFF94s** — Halgren, T. A. MMFF VI. MMFF94s option for energy minimization studies. *J. Comput. Chem.* **1999**, *20*, 720–729. [`doi:10.1002/(SICI)1096-987X(199905)20:7<720::AID-JCC7>3.0.CO;2-X`](<https://doi.org/10.1002/(SICI)1096-987X(199905)20:7%3C720::AID-JCC7%3E3.0.CO;2-X>)
+- **ASE** — Hjorth Larsen, A. *et al.* The atomic simulation environment — a Python library for working with atoms. *J. Phys.: Condens. Matter* **2017**, *29*, 273002. [doi:10.1088/1361-648X/aa680e](https://doi.org/10.1088/1361-648X/aa680e)
+
+**Machine learning and workflow**
+
+- **scikit-learn** — Pedregosa, F. *et al.* Scikit-learn: Machine Learning in Python. *J. Mach. Learn. Res.* **2011**, *12*, 2825–2830. <https://jmlr.org/papers/v12/pedregosa11a.html>
+- **Snakemake** — Mölder, F. *et al.* Sustainable data analysis with Snakemake. *F1000Research* **2021**, *10*, 33. [doi:10.12688/f1000research.29032.2](https://doi.org/10.12688/f1000research.29032.2)
+
+The same list is reproduced in the generated Snakemake HTML report (`workflow/report/description.rst`, `workflow/report/methods.rst`); keep the three in step when editing.
+
+---
+
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE) for details.
+
+### Third-party components
+
+QM-LUX's own source is Apache-2.0, but the published container image
+(`ghcr.io/bedapub/qm-lux`) **redistributes** third-party binaries under other licences —
+including **XTB** and **CREST** under **LGPL-3.0-or-later**. Those licences carry
+obligations that Apache-2.0 does not.
+
+The full inventory of redistributed components, their versions and their licences is in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), and the attribution notices required
+by those licences are in [NOTICE](NOTICE). Both are generated from the image itself; see
+the header of `THIRD_PARTY_LICENSES.md` for how to regenerate them after an
+`environment.yml` change.
+
+Gaussian 16 is **not** redistributed — it is commercial, is not in the image, and runs
+against your own licensed installation on the host.

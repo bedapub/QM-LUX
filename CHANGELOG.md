@@ -7,7 +7,47 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+- `NOTICE` and `THIRD_PARTY_LICENSES.md` record the third-party software the
+  container image redistributes. The repository previously named no licence for
+  any bundled component: XTB and CREST are **LGPL-3.0-or-later** and the string
+  "LGPL" did not appear anywhere in the tree. `NOTICE` covers the components
+  carrying obligations beyond attribution — XTB/CREST, Qt/PySide6 (LGPL-3.0-only,
+  pulled in transitively by the `matplotlib` meta-package and never loaded), ASE
+  (LGPL-2.1-or-later, the one that QM-LUX code actually imports), the MySQL client
+  libraries (GPL-2.0-or-later, via Qt), the GCC runtime libraries, and Intel MKL
+  (proprietary; installed because the conda-forge OpenBLAS build of `libblas`
+  depends on it, but not what NumPy loads — `libblas.so.3` resolves to
+  `libopenblasp-r0.3.28.so`). Both files are copied into the image, since a notice
+  that describes the image but lives only in git never reaches anyone who pulls it.
+  The source-availability section is a **draft**: it states both the GPL-3.0 §6(b)
+  written offer and the §6(d) route that fits registry distribution, and needs a
+  named entity and contact before publication.
+- `tools/gen_third_party_licenses.py` regenerates `THIRD_PARTY_LICENSES.md` from a
+  built image. The inventory is read out of the image rather than `environment.yml`
+  because the two differ: 246 components ship, 43 of them under a copyleft or
+  non-OSI licence, most reached transitively.
+- A `References` section in the README, with DOIs for the methods the workflow
+  runs. Citations previously existed only inside the generated Snakemake report,
+  so nothing was visible to anyone reading the repository.
+
 ### Fixed
+- The rendered methods text stated the wrong basis set. `workflow/report/methods.rst`
+  said the TD-DFT step was `B3LYP/6-31G*`; `create_input_with_charge` writes
+  `B3LYP/6-311+G(d,p)` with 30 singlet states and a water PCM, as its own docstring
+  says. That paragraph ships in every run's HTML report and is what a user would
+  copy into a manuscript, and for excited states the difference is not cosmetic.
+- The two report templates carried reference lists that disagreed. `methods.rst`
+  cited CREST only through the 2024 J. Chem. Phys. paper, which describes CREST 3.0,
+  while the image ships 2.11.2, whose paper is the 2020 PCCP one that appeared only
+  in `description.rst`. Both files now carry the same list, verified by parsing them
+  and comparing the extracted URIs. Added throughout: the xtb *program* paper
+  (distinct from the GFN2 *method* paper), ALPB — passed as `--alpb water` by both
+  the `crest` and `xtb` rules and previously named in prose but never cited — plus
+  ASE, ETKDG and MMFF94s. Every DOI was resolved and matched to its citation.
+- The Gaussian citation hardcoded "Revision C.01", which the workflow cannot know:
+  it runs against whatever `g16` the host provides. It now asks the user to cite
+  the revision they ran.
 - `get_results` selects cross-validation files by content rather than by name.
   A `results_ML*` filename does not identify one: the prediction step writes
   `<data_ml*>/ML_results/results_ML<descriptors><model>.csv`, whose columns are

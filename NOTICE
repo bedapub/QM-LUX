@@ -1,0 +1,178 @@
+QM-LUX
+Copyright 2026 Roche
+
+This product includes software developed at Roche.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+See the LICENSE file distributed with this work for the full text.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY COMPONENTS
+--------------------------------------------------------------------------------
+
+The QM-LUX *source distribution* (this repository, the `qm_lux` wheel and sdist)
+contains only Apache-2.0 licensed material authored for this project.
+
+The QM-LUX *container image* (`ghcr.io/bedapub/qm-lux`) additionally
+REDISTRIBUTES third-party software under other licences, some of them copyleft.
+A complete, generated inventory of every redistributed component, its version
+and its declared licence is in THIRD_PARTY_LICENSES.md. The components that
+carry obligations beyond attribution are summarised below.
+
+Gaussian 16 is NOT redistributed. It is commercial software, is deliberately not
+included in the image, and is executed against the user's own licensed
+installation on the host.
+
+All third-party components are unmodified binaries as published by their
+respective packagers (conda-forge, PyPI). QM-LUX applies no patches to them.
+
+
+1. GNU Lesser General Public License, version 3 or later (LGPL-3.0-or-later)
+--------------------------------------------------------------------------------
+
+    xtb    6.4.1    Copyright (C) Grimme group, University of Bonn
+                    https://github.com/grimme-lab/xtb
+    crest  2.11.2   Copyright (C) Grimme group, University of Bonn
+                    https://github.com/crest-lab/crest
+
+These are semi-empirical quantum chemistry programs. QM-LUX does not link
+against them: the workflow invokes them as separate executables in a subprocess
+(see `workflow/Snakefile`, rules `crest` and `xtb`).
+
+The full LGPL-3.0 text is available at https://www.gnu.org/licenses/lgpl-3.0.txt
+and the GPL-3.0 text it incorporates by reference at
+https://www.gnu.org/licenses/gpl-3.0.txt
+
+Corresponding source for the exact versions redistributed here is available from
+the upstream projects above and from the conda-forge feedstocks that produced
+the binaries in the image:
+
+    https://github.com/conda-forge/xtb-feedstock
+    https://github.com/conda-forge/crest-feedstock
+
+WRITTEN OFFER: for a period of three years from the date on which this image was
+distributed, the QM-LUX project — that is, the party conveying the image, not the
+upstream copyright holders named above — will provide, on request, a complete
+machine-readable copy of the Corresponding Source for the LGPL components listed
+here, at no charge beyond the cost of performing the distribution. Requests should
+be directed to:
+
+    <TO BE CONFIRMED — project owner contact, to be filled before public release>
+
+The legal entity making this offer must be named here before publication. It is the
+same entity that belongs in the LICENSE copyright line, which currently reads
+"Roche" — a brand rather than a legal person.
+
+WHICH ROUTE APPLIES. GPL-3.0 section 6, incorporated by reference into LGPL-3.0,
+gives several alternative ways to satisfy the source-availability requirement.
+Clauses 6(a) and 6(b) each begin "Convey the object code in, or embodied in, a
+physical product (including a physical distribution medium)", so they address
+distribution on media; 6(c) is narrower still, permitted only for conveying that
+is occasional and noncommercial, and only by someone who themselves received a
+6(b) offer. This image is conveyed over a network from a container registry, which
+is the situation clause 6(d) describes: "Convey the object code by offering access
+from a designated place (gratis or for a charge), and offer equivalent access to
+the Corresponding Source in the same way through the same place at no further
+charge."
+
+The written offer above is therefore the conservative form, not the clause that
+most directly fits how this image is published. Relying on 6(d) instead — pointing
+recipients at the upstream and conda-forge sources for the exact pinned versions,
+as listed above — is a legitimate alternative, but it is not obligation-free. It
+requires that "you maintain clear directions next to the object code saying where
+to find the Corresponding Source", and provides that "you remain obligated to
+ensure that it is available for as long as needed to satisfy these requirements" —
+an open-ended availability duty, in place of the written offer's three-year
+contactable one.
+
+Choosing between the two is a matter for the open-source licence review, not a
+settled question. Once chosen, this section should be edited to state only the
+route actually relied upon; keeping both is ambiguous about which obligation has
+been accepted.
+
+
+2. GNU Lesser General Public License, version 3 only (LGPL-3.0-only)
+--------------------------------------------------------------------------------
+
+    qt6-main  6.9.0   Copyright (C) The Qt Company Ltd and contributors
+    pyside6   6.9.0   Copyright (C) The Qt Company Ltd and contributors
+
+Present only as a transitive dependency of the `matplotlib` conda meta-package
+(matplotlib -> pyside6 -> qt6-main). No QM-LUX code imports Qt or PySide, and
+matplotlib resolves to the non-interactive "agg" backend inside the image
+(verified with no DISPLAY set), so Qt is redistributed but never loaded.
+Whichever source-availability route section 1 settles on applies to these too.
+Upstream: https://www.qt.io/ and https://code.qt.io/cgit/
+Packaging: https://github.com/conda-forge/qt-main-feedstock
+
+
+3. GNU Lesser General Public License, version 2.1 or later
+--------------------------------------------------------------------------------
+
+    ase  3.23.0  Copyright (C) ASE developers
+                 https://gitlab.com/ase/ase
+
+The Atomic Simulation Environment. Unlike xtb and crest, ASE IS imported
+directly by QM-LUX Python code (`src/qm_lux/cli.py`, `src/qm_lux/utils/gaussian.py`)
+and is a declared runtime dependency in `pyproject.toml`. It is not vendored: it
+is installed from its own distribution and remains separately replaceable by the
+user, which is the condition the LGPL attaches to this form of use.
+
+Other LGPL-2.x components (system libraries such as `libglib`, `libiconv`,
+`libxcrypt`, `alsa-lib`, `graphite2`, `keyutils`, `libnsl`, `libntlm`) are listed
+in THIRD_PARTY_LICENSES.md.
+
+
+4. GNU General Public License, version 2 or later (GPL-2.0-or-later)
+--------------------------------------------------------------------------------
+
+    mysql-libs, mysql-common  9.0.1  Copyright (C) Oracle Corporation
+    dbus                      1.13.6
+
+The MySQL client libraries are present only as a transitive dependency of
+`qt6-main` (itself pulled in by `matplotlib`). Nothing in QM-LUX uses a database.
+Removing the Qt dependency would remove these as well.
+
+
+5. GPL-3.0 WITH GCC-runtime-exception
+--------------------------------------------------------------------------------
+
+    libgcc, libgcc-ng, libstdcxx, libstdcxx-ng, libgomp,
+    libgfortran, libgfortran-ng, libgfortran5    14.2.0
+
+GCC runtime support libraries. The GCC Runtime Library Exception permits
+redistribution alongside software under other licences.
+https://www.gnu.org/licenses/gcc-exception-3.1.html
+
+
+6. Non-OSI / proprietary
+--------------------------------------------------------------------------------
+
+    mkl  2024.2.2  Copyright (C) Intel Corporation
+                   Intel Simplified Software License (October 2022)
+                   https://www.intel.com/content/www/us/en/developer/articles/license/onemkl-license-faq.html
+
+Intel Math Kernel Library. It is NOT used at runtime: `environment.yml` pins the
+OpenBLAS build of the BLAS/LAPACK stack (`libblas=3.9.0=*openblas*`), and in the
+image `lib/libblas.so.3` resolves to `libopenblasp-r0.3.28.so`, which is what
+NumPy loads. MKL is nevertheless installed, because the conda-forge OpenBLAS
+build of `libblas` declares `mkl` among its dependencies — so roughly 125 MB of
+it is redistributed in the image without ever being exercised.
+
+
+7. Permissively licensed components
+--------------------------------------------------------------------------------
+
+The remainder — including RDKit (BSD-3-Clause), scikit-learn, pandas, NumPy,
+SciPy, seaborn (BSD-3-Clause), OpenBLAS (BSD-3-Clause), imbalanced-learn (MIT),
+matplotlib (PSF-2.0), Python itself (PSF-2.0) and arvados-python-client
+(Apache-2.0) — is enumerated with versions and licences in
+THIRD_PARTY_LICENSES.md.
+
+The Apache-2.0 components carry their own NOTICE obligations under section 4(d)
+of that licence where upstream supplies a NOTICE file.
