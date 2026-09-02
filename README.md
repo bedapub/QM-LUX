@@ -6,7 +6,7 @@
 [![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](https://github.com/bedapub/QM-LUX/releases/tag/v1.0.0)
 
 QM-LUX predicts the phototoxicity of small molecules using UV-Vis spectra computed with quantum mechanics. The workflow combines 3D conformer generation (RDKit MMFF94s), conformational sampling with CREST/XTB, excited-state TD-DFT calculations with Gaussian, and an ML classifier trained on UV-Vis AUC descriptors, Morgan fingerprints, and RDKit physicochemical properties.
-The training set proposed here comes form the public 345 compounds ([Schmidt et al. 2019]([[url](https://pubs.acs.org/crtoec/article/32/11/2338/594973/Computational-Investigation-of-Drug-Phototoxicity)))]) that were used for the reverse external validation as reported in the manuscript. 
+The training set proposed here comes form the public 345 compounds ([Schmidt et al. 2019](https://pubs.acs.org/crtoec/article/32/11/2338/594973/Computational-Investigation-of-Drug-Phototoxicity)))) that were used for the reverse external validation as reported in the manuscript. 
 
 ---
 
